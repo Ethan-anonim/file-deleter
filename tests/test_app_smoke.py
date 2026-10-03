@@ -7,7 +7,7 @@ app_module = pytest.importorskip("app")
 
 
 @pytest.fixture
-def app(monkeypatch):
+def app(monkeypatch, tmp_path_factory):
     try:
         from tkinterdnd2 import TkinterDnD
         root = TkinterDnD.Tk()
@@ -15,9 +15,16 @@ def app(monkeypatch):
         pytest.skip(f"brak środowiska graficznego: {exc}")
     root.withdraw()
     monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *a, **k: True)
-    instance = app_module.App(root)
+    settings_file = tmp_path_factory.mktemp('cfg') / 'settings.json'
+    instance = app_module.App(root, settings_file=settings_file)
     yield instance
     root.destroy()
+
+
+def search(app):
+    app.start_search()
+    app.wait_for_search()
+    app.wait_for_search()
 
 
 def touch(path: Path) -> Path:
@@ -35,7 +42,7 @@ def test_full_flow_search_skip_and_delete(app, tmp_path):
     app.add_paths([tmp_path / "drop"])
     app.set_search_root(tmp_path / "mods")
     app.permanent.set(True)
-    app.start_search()
+    search(app)
     assert len(app.matches) == 2
 
     first = app.matches[app.index].path
@@ -54,7 +61,7 @@ def test_empty_folder_removed_after_delete(app, tmp_path):
     app.add_paths([tmp_path / "drop"])
     app.set_search_root(tmp_path / "mods")
     app.permanent.set(True)
-    app.start_search()
+    search(app)
     app.delete_current()
     assert not target.exists()
     assert not (tmp_path / "mods" / "x").exists()
@@ -71,7 +78,7 @@ def test_delete_error_does_not_crash(app, tmp_path, monkeypatch):
         raise PermissionError("zablokowany")
 
     monkeypatch.setattr(app_module.finder, "delete_match", boom)
-    app.start_search()
+    search(app)
     app.delete_current()
     assert app.deleted == 0
     assert "zablokowany" in app.status.get()
@@ -85,7 +92,7 @@ def test_search_root_pinned_per_search(app, tmp_path):
     app.add_paths([tmp_path / "drop"])
     app.set_search_root(tmp_path / "mods")
     app.permanent.set(True)
-    app.start_search()
+    search(app)
     app.set_search_root(other)
     app.delete_current()
     assert not target.exists()
@@ -101,7 +108,7 @@ def test_buttons_disabled_during_delete_and_reenabled_after(app, tmp_path, monke
     app.add_paths([tmp_path / "drop"])
     app.set_search_root(tmp_path / "mods")
     app.permanent.set(True)
-    app.start_search()
+    search(app)
     states = []
     real = app_module.finder.delete_match
 
@@ -122,7 +129,7 @@ def _setup(app, tmp_path, names, permanent=True):
     app.add_paths([tmp_path / "drop"])
     app.set_search_root(tmp_path / "mods")
     app.permanent.set(permanent)
-    app.start_search()
+    search(app)
 
 
 def _states(app):
@@ -171,7 +178,7 @@ def test_source_file_confirmation(app, tmp_path, monkeypatch):
     app.add_paths([target])
     app.set_search_root(tmp_path / "mods")
     app.permanent.set(True)
-    app.start_search()
+    search(app)
     assert app.matches[0].is_source
     answers = iter([False, True, True])
     monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *a, **k: next(answers))
@@ -214,3 +221,204 @@ def test_all_remaining_vanished_ends_cleanly(app, tmp_path):
     app.skip_current()
     assert _states(app) == ["disabled"] * 3
     assert "Koniec" in app.status.get()
+
+
+class FakeEvent:
+    def __init__(self, data="", action="copy"):
+        self.data = data
+        self.action = action
+
+
+def test_score_level_thresholds():
+    assert app_module.score_level(100) == "ok"
+    assert app_module.score_level(99.9) == "mid"
+    assert app_module.score_level(90) == "mid"
+    assert app_module.score_level(89.9) == "low"
+
+
+def test_search_runs_in_background_and_reports_progress(app, tmp_path):
+    for i in range(250):
+        touch(tmp_path / "mods" / f"noise{i}.jar")
+    touch(tmp_path / "drop" / "noise7.jar")
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    app.start_search()
+    assert app.searching is True
+    assert str(app.btn_search["state"]) == "disabled"
+    assert str(app.btn_cancel["state"]) == "normal"
+    app.wait_for_search()
+    assert app.searching is False
+    assert str(app.btn_search["state"]) == "normal"
+    assert str(app.btn_cancel["state"]) == "disabled"
+    assert "250" in app.progress_text.get()
+    assert len(app.matches) >= 1
+
+
+def test_start_search_ignored_while_searching(app, tmp_path, monkeypatch):
+    touch(tmp_path / "drop" / "a.jar")
+    touch(tmp_path / "mods" / "a.jar")
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path / "mods")
+    calls = []
+    real = app_module.finder.find_matches
+
+    def counting(*a, **k):
+        calls.append(1)
+        return real(*a, **k)
+
+    monkeypatch.setattr(app_module.finder, "find_matches", counting)
+    app.start_search()
+    app.start_search()
+    app.wait_for_search()
+    assert len(calls) == 1
+
+
+def test_cancel_search(app, tmp_path, monkeypatch):
+    touch(tmp_path / "drop" / "a.jar")
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path)
+
+    def endless(sources, root, threshold, on_progress, should_cancel, progress_every):
+        import time as _t
+        while not should_cancel():
+            _t.sleep(0.005)
+        raise app_module.finder.SearchCancelled()
+
+    monkeypatch.setattr(app_module.finder, "find_matches", endless)
+    app.start_search()
+    app.cancel_search()
+    app.wait_for_search()
+    assert "Anulowano" in app.status.get()
+    assert app.matches == []
+    assert str(app.btn_search["state"]) == "normal"
+    assert str(app.btn_delete["state"]) == "disabled"
+
+
+def test_worker_error_is_reported_not_raised(app, tmp_path, monkeypatch):
+    touch(tmp_path / "drop" / "a.jar")
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path)
+
+    def boom(*a, **k):
+        raise RuntimeError("awaria dysku")
+
+    monkeypatch.setattr(app_module.finder, "find_matches", boom)
+    app.start_search()
+    app.wait_for_search()
+    assert "awaria dysku" in app.status.get()
+    assert app.searching is False
+    assert str(app.btn_search["state"]) == "normal"
+
+
+def test_badge_shows_score_color_and_hides_after_finish(app, tmp_path):
+    _setup(app, tmp_path, ["a.jar"])
+    assert app.badge.cget("text") == "100%"
+    assert app.badge.cget("bg") == app_module.BADGE_COLORS["ok"][0]
+    assert app.badge.winfo_manager() == "pack"
+    app.finish()
+    assert app.badge.winfo_manager() == ""
+
+
+def test_reveal_in_explorer_selects_file(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar"])
+    launched = []
+    monkeypatch.setattr(app_module.subprocess, "Popen", lambda args, **k: launched.append(args))
+    app.reveal_current()
+    assert launched == [["explorer", "/select,", str(app.matches[0].path)]]
+
+
+def test_reveal_falls_back_to_parent_folder_when_file_is_gone(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar"])
+    launched = []
+    monkeypatch.setattr(app_module.subprocess, "Popen", lambda args, **k: launched.append(args))
+    current = app.matches[app.index].path
+    current.unlink()
+    app.reveal_current()
+    assert launched == [["explorer", str(current.parent)]]
+
+
+def test_reveal_error_is_shown_not_raised(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar"])
+
+    def boom(*a, **k):
+        raise OSError("brak explorer")
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", boom)
+    app.reveal_current()
+    assert "brak explorer" in app.status.get()
+
+
+def test_drop_enter_and_leave_toggle_highlight(app):
+    assert app._on_drop_enter(FakeEvent(action="copy")) == "copy"
+    assert app._hover is True
+    assert app._on_drop_leave(FakeEvent(action="copy")) == "copy"
+    assert app._hover is False
+
+
+def test_drop_event_adds_paths_with_spaces(app, tmp_path):
+    folder = tmp_path / "my drop"
+    touch(folder / "x.jar")
+    single = touch(tmp_path / "y.jar")
+    app._hover = True
+    result = app._on_drop(FakeEvent(data=f"{{{folder.as_posix()}}} {single.as_posix()}", action="copy"))
+    assert result == "copy"
+    assert app._hover is False
+    assert {s.name for s in app.sources.values()} == {"x.jar", "y.jar"}
+    assert "2" in app.sources_text.get()
+
+
+def test_sources_counter_follows_checkboxes(app, tmp_path):
+    touch(tmp_path / "drop" / "a.jar")
+    touch(tmp_path / "drop" / "b.jar")
+    app.add_paths([tmp_path / "drop"])
+    assert app.sources_text.get() == "Zaznaczone: 2 z 2"
+    key = next(iter(app.sources))
+    app.checked[key] = False
+    app._refresh_sources_text()
+    assert app.sources_text.get() == "Zaznaczone: 1 z 2"
+    app.clear_sources()
+    assert app.sources_text.get() == "Lista jest pusta"
+
+
+def test_theme_toggle_switches_and_persists(app):
+    start = app.theme
+    app.toggle_theme()
+    assert app.theme != start
+    import settings
+    assert settings.load(app.settings_file)["theme"] == app.theme
+    app.toggle_theme()
+    assert app.theme == start
+
+
+def test_settings_restored_on_next_start(app, tmp_path):
+    mods = tmp_path / "mods"
+    mods.mkdir()
+    app.set_search_root(mods)
+    app._on_scale(72.4)
+    app.toggle_theme()
+    app._save_settings()
+    chosen_theme = app.theme
+    second_root = type(app.root)()
+    second_root.withdraw()
+    try:
+        second = app_module.App(second_root, settings_file=app.settings_file)
+        assert second.search_root == mods
+        assert second.threshold.get() == 72
+        assert second.theme == chosen_theme
+        assert second.permanent.get() is False
+    finally:
+        second_root.destroy()
+
+
+def test_missing_saved_root_is_ignored(app, tmp_path):
+    import settings
+    settings.save({"theme": "dark", "last_root": str(tmp_path / "gone"), "threshold": 85},
+                  app.settings_file)
+    other = type(app.root)()
+    other.withdraw()
+    try:
+        fresh = app_module.App(other, settings_file=app.settings_file)
+        assert fresh.search_root is None
+    finally:
+        other.destroy()
