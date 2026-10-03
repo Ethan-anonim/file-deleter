@@ -1,0 +1,331 @@
+from pathlib import Path
+
+import pytest
+
+import finder
+
+
+def touch(path: Path, content: str = "x") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def test_normalize_strips_extension_case_and_separators():
+    assert finder.normalize("Sodium-Fabric_0.5.jar") == "sodium fabric 0 5"
+
+
+def test_normalize_separator_only_name_is_empty():
+    assert finder.normalize("---.jar") == ""
+
+
+def test_similarity_exact_ignores_case_and_separators():
+    assert finder.similarity("Sodium-0.5.jar", "sodium_0.5.JAR") == 100.0
+
+
+def test_similarity_different_extension_is_zero():
+    assert finder.similarity("sodium.jar", "sodium.txt") == 0.0
+
+
+def test_similarity_extensionless_only_matches_extensionless():
+    assert finder.similarity("LICENSE", "license") == 100.0
+    assert finder.similarity("LICENSE", "license.txt") == 0.0
+
+
+def test_similarity_close_versions_are_high():
+    assert finder.similarity("sodium-0.5.jar", "sodium-0.6.jar") > 85
+
+
+def test_similarity_unrelated_is_low():
+    assert finder.similarity("abc.jar", "xyz.jar") < 50
+
+
+def test_similarity_empty_normalized_is_zero():
+    assert finder.similarity("---.jar", "---.jar") == 0.0
+
+
+def test_collect_sources_from_folder_and_file(tmp_path):
+    touch(tmp_path / "drop" / "a" / "b" / "x.jar")
+    touch(tmp_path / "drop" / "y.jar")
+    single = touch(tmp_path / "z.jar")
+    sources = finder.collect_sources([tmp_path / "drop", single])
+    assert [s.name for s in sources] == ["x.jar", "y.jar", "z.jar"]
+    assert sources[0].path == tmp_path / "drop" / "a" / "b" / "x.jar"
+
+
+def test_collect_sources_ignores_folders_themselves(tmp_path):
+    (tmp_path / "drop" / "empty-folder").mkdir(parents=True)
+    assert finder.collect_sources([tmp_path / "drop"]) == []
+
+
+def test_collect_sources_has_no_duplicates(tmp_path):
+    f = touch(tmp_path / "drop" / "x.jar")
+    sources = finder.collect_sources([tmp_path / "drop", f, f])
+    assert len(sources) == 1
+
+
+def test_collect_sources_ignores_missing_paths(tmp_path):
+    assert finder.collect_sources([tmp_path / "nope"]) == []
+
+
+def sources_of(*names: str) -> list[finder.SourceFile]:
+    return [finder.SourceFile(n, Path("/src") / n) for n in names]
+
+
+def test_find_exact_match_in_nested_folders(tmp_path):
+    target = touch(tmp_path / "root" / "a" / "b" / "sodium-0.5.jar")
+    touch(tmp_path / "root" / "other.jar")
+    matches = finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root")
+    assert [m.path for m in matches] == [target]
+    assert matches[0].score == 100.0
+    assert matches[0].source_name == "sodium-0.5.jar"
+    assert matches[0].is_source is False
+
+
+def test_different_extension_is_not_a_match(tmp_path):
+    touch(tmp_path / "root" / "sodium.jar")
+    touch(tmp_path / "root" / "sodium.txt")
+    matches = finder.find_matches(sources_of("sodium.jar"), tmp_path / "root", 0)
+    assert [m.path.name for m in matches] == ["sodium.jar"]
+
+
+def test_extension_case_is_ignored(tmp_path):
+    touch(tmp_path / "root" / "sodium.JAR")
+    matches = finder.find_matches(sources_of("sodium.jar"), tmp_path / "root")
+    assert [m.path.name for m in matches] == ["sodium.JAR"]
+
+
+def test_fuzzy_match_also_requires_same_extension(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.6.txt")
+    assert finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root") == []
+
+
+def test_folders_are_never_matches(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.5.jar" / "readme.txt")
+    assert finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root") == []
+
+
+def test_fuzzy_match_respects_threshold(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.6.jar")
+    src = sources_of("sodium-0.5.jar")
+    assert len(finder.find_matches(src, tmp_path / "root", threshold=85)) == 1
+    assert finder.find_matches(src, tmp_path / "root", threshold=95) == []
+
+
+def test_matches_sorted_by_score_desc(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.6.jar")
+    touch(tmp_path / "root" / "deep" / "sodium-0.5.jar")
+    matches = finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root")
+    assert [m.path.name for m in matches] == ["sodium-0.5.jar", "sodium-0.6.jar"]
+    assert matches[0].score > matches[1].score
+
+
+def test_file_matching_several_sources_appears_once_with_best_score(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.5.jar")
+    matches = finder.find_matches(
+        sources_of("sodium-0.6.jar", "sodium-0.5.jar"), tmp_path / "root"
+    )
+    assert len(matches) == 1
+    assert matches[0].score == 100.0
+    assert matches[0].source_name == "sodium-0.5.jar"
+
+
+def test_separator_only_names_match_nothing(tmp_path):
+    touch(tmp_path / "root" / "---.jar")
+    touch(tmp_path / "root" / "abc.jar")
+    assert finder.find_matches(sources_of("---.jar"), tmp_path / "root", 0) == []
+    assert finder.find_matches(sources_of("abc.jar"), tmp_path / "root", 0)[0].path.name == "abc.jar"
+
+
+def test_unicode_and_extensionless_names(tmp_path):
+    touch(tmp_path / "root" / "Żółć-1.0.jar")
+    touch(tmp_path / "root" / "LICENSE")
+    matches = finder.find_matches(sources_of("żółć_1.0.JAR", "license"), tmp_path / "root")
+    assert {m.path.name for m in matches} == {"Żółć-1.0.jar", "LICENSE"}
+
+
+def test_source_file_inside_search_root_is_flagged(tmp_path):
+    original = touch(tmp_path / "root" / "drop" / "x.jar")
+    copy = touch(tmp_path / "root" / "mods" / "x.jar")
+    sources = finder.collect_sources([tmp_path / "root" / "drop"])
+    matches = finder.find_matches(sources, tmp_path / "root")
+    flags = {m.path: m.is_source for m in matches}
+    assert flags == {original: True, copy: False}
+
+
+def test_empty_sources_returns_empty(tmp_path):
+    touch(tmp_path / "root" / "x.jar")
+    assert finder.find_matches([], tmp_path / "root") == []
+
+
+import os
+
+
+def test_delete_removes_file_keeps_nonempty_folder(tmp_path):
+    target = touch(tmp_path / "root" / "a" / "x.jar")
+    touch(tmp_path / "root" / "a" / "other.jar")
+    result = finder.delete_match(target, tmp_path / "root", permanent=True)
+    assert not target.exists()
+    assert (tmp_path / "root" / "a" / "other.jar").exists()
+    assert result.removed_folders == []
+
+
+def test_delete_removes_empty_folders_up_to_but_not_including_root(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "b" / "c" / "x.jar")
+    result = finder.delete_match(target, root, permanent=True)
+    assert [p.name for p in result.removed_folders] == ["c", "b", "a"]
+    assert root.exists()
+    assert list(root.iterdir()) == []
+
+
+def test_delete_stops_at_first_nonempty_parent(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "b" / "x.jar")
+    touch(root / "a" / "keep.txt")
+    result = finder.delete_match(target, root, permanent=True)
+    assert [p.name for p in result.removed_folders] == ["b"]
+    assert (root / "a" / "keep.txt").exists()
+
+
+def test_hidden_file_keeps_folder(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    touch(root / "a" / ".hidden")
+    finder.delete_match(target, root, permanent=True)
+    assert (root / "a").exists()
+
+
+def test_sibling_subfolder_keeps_folder(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    (root / "a" / "sub").mkdir()
+    finder.delete_match(target, root, permanent=True)
+    assert (root / "a" / "sub").exists()
+
+
+def test_file_directly_in_root_never_removes_root(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "x.jar")
+    result = finder.delete_match(target, root, permanent=True)
+    assert result.removed_folders == []
+    assert root.exists()
+
+
+def test_folders_emptied_by_previews_without_deleting(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "b" / "x.jar")
+    preview = finder.folders_emptied_by(target, root)
+    assert [p.name for p in preview] == ["b", "a"]
+    assert target.exists()
+
+
+def test_refuses_to_delete_a_directory(tmp_path):
+    root = tmp_path / "root"
+    folder = root / "a"
+    folder.mkdir(parents=True)
+    with pytest.raises(IsADirectoryError):
+        finder.delete_match(folder, root, permanent=True)
+    assert folder.exists()
+
+
+def test_delete_missing_file_raises_oserror(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    with pytest.raises(OSError):
+        finder.delete_match(root / "nope.jar", root, permanent=True)
+
+
+def test_folder_that_gained_a_file_after_preview_is_kept(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    calls = []
+
+    def racing_trash(p):
+        calls.append(p)
+        os.remove(p)
+        touch(root / "a" / "new.txt")
+
+    result = finder.delete_match(target, root, permanent=False, trash=racing_trash)
+    assert (root / "a" / "new.txt").exists()
+    assert result.removed_folders == []
+    assert len(calls) == 1
+
+
+def test_trash_mode_sends_file_and_empty_folders_to_trash(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    trashed = []
+
+    def fake_trash(p):
+        trashed.append(Path(p).name)
+        if os.path.isdir(p):
+            os.rmdir(p)
+        else:
+            os.remove(p)
+
+    result = finder.delete_match(target, root, permanent=False, trash=fake_trash)
+    assert trashed == ["x.jar", "a"]
+    assert [p.name for p in result.removed_folders] == ["a"]
+
+
+def test_trash_receives_abspath_not_resolved(tmp_path):
+    target = touch(tmp_path / "a" / "x.jar")
+    sneaky = tmp_path / "a" / ".." / "a" / "x.jar"
+    seen = []
+    finder.delete_match(sneaky, tmp_path, permanent=False, trash=seen.append)
+    import os
+    assert seen[0] == os.path.abspath(sneaky)
+    assert ".." not in Path(seen[0]).parts
+
+
+def test_trash_does_not_follow_symlink(tmp_path):
+    outside = touch(tmp_path / "outside" / "real.jar")
+    root = tmp_path / "root"
+    root.mkdir()
+    link = root / "real.jar"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinki niedostępne: {exc}")
+    seen = []
+    finder.delete_match(link, root, permanent=False, trash=seen.append)
+    assert seen[0] == str(link)
+
+
+def test_folder_failure_after_file_removed_keeps_result(tmp_path):
+    target = touch(tmp_path / "root" / "a" / "x.jar")
+    calls = []
+
+    def flaky_trash(p):
+        calls.append(p)
+        if len(calls) == 1:
+            Path(p).unlink()
+        else:
+            raise OSError("zablokowany folder")
+
+    result = finder.delete_match(target, tmp_path / "root", permanent=False, trash=flaky_trash)
+    assert not target.exists()
+    assert result.removed_folders == []
+
+
+def test_drive_has_recycle_bin_by_drive_type(monkeypatch):
+    import ctypes
+    kinds = {}
+
+    class K:
+        @staticmethod
+        def GetDriveTypeW(root):
+            return kinds["t"]
+
+    class W:
+        kernel32 = K
+
+    monkeypatch.setattr(ctypes, "windll", W, raising=False)
+    for kind, expected in ((3, True), (2, False), (4, False)):
+        kinds["t"] = kind
+        assert finder.drive_has_recycle_bin("C:\\mods\\a.jar") is expected
+
+
+def test_unc_path_has_no_recycle_bin():
+    assert finder.drive_has_recycle_bin("\\\\server\\share\\mods\\a.jar") is False
