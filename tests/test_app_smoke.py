@@ -75,3 +75,41 @@ def test_delete_error_does_not_crash(app, tmp_path, monkeypatch):
     app.delete_current()
     assert app.deleted == 0
     assert "zablokowany" in app.status.get()
+
+
+def test_search_root_pinned_per_search(app, tmp_path):
+    touch(tmp_path / "drop" / "sodium-0.5.jar")
+    target = touch(tmp_path / "mods" / "x" / "y" / "sodium-0.5.jar")
+    other = tmp_path / "other"
+    other.mkdir()
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    app.start_search()
+    app.set_search_root(other)
+    app.delete_current()
+    assert not target.exists()
+    assert not (tmp_path / "mods" / "x").exists()
+    assert (tmp_path / "mods").exists()
+
+
+def test_buttons_disabled_during_delete_and_reenabled_after(app, tmp_path, monkeypatch):
+    touch(tmp_path / "drop" / "a.jar")
+    touch(tmp_path / "drop" / "b.jar")
+    touch(tmp_path / "mods" / "a.jar")
+    touch(tmp_path / "mods" / "b.jar")
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    app.start_search()
+    states = []
+    real = app_module.finder.delete_match
+
+    def spy(*a, **k):
+        states.append([str(b["state"]) for b in (app.btn_delete, app.btn_skip, app.btn_stop)])
+        return real(*a, **k)
+
+    monkeypatch.setattr(app_module.finder, "delete_match", spy)
+    app.delete_current()
+    assert states == [["disabled"] * 3]
+    assert [str(b["state"]) for b in (app.btn_delete, app.btn_skip, app.btn_stop)] == ["normal"] * 3

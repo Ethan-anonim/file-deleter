@@ -18,6 +18,7 @@ class App:
         self.sources: dict[str, finder.SourceFile] = {}
         self.checked: dict[str, bool] = {}
         self.search_root: Path | None = None
+        self.active_root: Path | None = None
         self.matches: list[finder.Match] = []
         self.index = 0
         self.deleted = 0
@@ -153,7 +154,8 @@ class App:
         if self.search_root is None or not self.search_root.is_dir():
             messagebox.showinfo("Mod Deleter", "Najpierw wybierz folder do przeszukania.")
             return
-        self.matches = finder.find_matches(chosen, self.search_root, float(self.threshold.get()))
+        self.active_root = self.search_root
+        self.matches = finder.find_matches(chosen, self.active_root, float(self.threshold.get()))
         self.index = 0
         self.deleted = 0
         self.last_error = ""
@@ -188,7 +190,7 @@ class App:
         notes = []
         if match.is_source:
             notes.append("UWAGA: to jest plik wzorcowy, z którego pobrano nazwę.")
-        emptied = finder.folders_emptied_by(match.path, self.search_root)
+        emptied = finder.folders_emptied_by(match.path, self.active_root)
         if emptied:
             names = ", ".join(str(p) for p in emptied)
             notes.append(f"Po usunięciu zostaną też usunięte puste foldery: {names}")
@@ -203,8 +205,10 @@ class App:
         if permanent and not messagebox.askyesno(
                 "Usuń trwale", f"Usunąć trwale, bez Kosza?\n\n{match.path}"):
             return
+        self._set_review_enabled(False)
+        self.root.update_idletasks()
         try:
-            result = finder.delete_match(match.path, self.search_root, permanent=permanent)
+            result = finder.delete_match(match.path, self.active_root, permanent=permanent)
         except OSError as exc:
             self.last_error = f"Nie udało się usunąć {match.path.name}: {exc}"
             self.status.set(self.last_error)
