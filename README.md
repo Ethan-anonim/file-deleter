@@ -1,104 +1,104 @@
 # Mod Deleter
 
-Program okienkowy na Windows, który usuwa pliki o takiej samej lub bardzo podobnej nazwie jak pliki wzorcowe. Powstał z myślą o porządkowaniu folderów z modami: wrzucasz folder (albo pliki) ze starymi wersjami, wskazujesz folder do przeszukania, a program znajduje pasujące pliki i przy każdym pyta, czy go usunąć.
+A Windows desktop app that deletes files whose names are the same as, or very similar to, a set of reference files. It was built for tidying mod folders: you drop in a folder (or files) containing the old versions, point the app at the folder to clean, and it finds the matching files and asks, one by one, whether to delete each of them.
 
-Usuwa **tylko pliki**. Foldery znikają wyłącznie wtedy, gdy po usunięciu pliku zostały całkiem puste.
+It deletes **files only**. Folders disappear only when they are left completely empty after a file was deleted.
 
-## Pobieranie
+## Download
 
-Gotowy program (`ModDeleter.exe`, Python nie jest potrzebny) jest w zakładce **[Releases](../../releases/latest)**. Pobierz plik i uruchom go dwuklikiem.
+The ready-to-run program (`ModDeleter.exe`, no Python needed) is on the **[Releases](../../releases/latest)** page. Download the file and double-click it.
 
-> **Ostrzeżenie Windows:** plik nie jest podpisany certyfikatem, więc SmartScreen może go zablokować. Kliknij „Więcej informacji” → „Uruchom mimo to”.
+> **Windows warning:** the file is not code-signed, so SmartScreen may block it. Click “More info” → “Run anyway”.
 
-Repozytorium jest prywatne, więc pobieranie wymaga zalogowania na konto z dostępem.
+The repository is private, so downloading requires being signed in to an account with access.
 
-## Jak używać
+## How to use
 
-1. **Czego szukam.** Przeciągnij na okno foldery lub pliki (albo użyj „Dodaj pliki…” / „Dodaj folder…”). Program pobierze z nich same nazwy plików. Pozycje na liście możesz odznaczyć.
-2. **Gdzie szukam.** Kliknij „Wybierz folder…” i wskaż folder do przeszukania. Program przeszuka go razem ze wszystkimi podfolderami.
-3. **Próg podobieństwa.** Suwak (50–100%, domyślnie 85%) ustala, jak bardzo nazwa może się różnić, np. `sodium-0.5.jar` i `sodium-0.6.jar`.
-4. Kliknij **Szukaj**. Szukanie działa w tle, widać postęp i można je przerwać przyciskiem **Anuluj**.
-5. Dla każdego trafienia zobaczysz pełną ścieżkę, procent podobieństwa i nazwę, której dotyczy. Kliknij:
-   - **Usuń** — usuwa ten plik,
-   - **Pomiń** — przechodzi do następnego,
-   - **Pokaż w Eksploratorze** — otwiera folder z zaznaczonym plikiem,
-   - **Usuń wszystkie (N)** — usuwa wszystkie pozostałe trafienia naraz, po dodatkowym potwierdzeniu (patrz niżej),
-   - **Zakończ** — kończy przegląd.
+1. **What to look for.** Drag folders or files onto the window (or use “Add files…” / “Add folder…”). The app takes only the file names from them. You can untick any entry in the list.
+2. **Where to search.** Click “Choose folder…” and pick the folder to clean. The app searches it together with all its subfolders.
+3. **Similarity threshold.** The slider (50–100%, default 85%) sets how much a name may differ, e.g. `sodium-0.5.jar` vs `sodium-0.6.jar`.
+4. Click **Search**. The search runs in the background; you can watch the progress and stop it with **Cancel**.
+5. For each match you see the full path, the similarity percentage and the name it matched. Then click:
+   - **Delete** — deletes this file,
+   - **Skip** — moves on to the next match,
+   - **Show in Explorer** — opens the folder with the file selected,
+   - **Delete all (N)** — deletes all remaining matches at once, after an extra confirmation (see below),
+   - **Finish** — ends the review.
 
-### Zasady dopasowania
+### Matching rules
 
-- Rozszerzenie musi być **takie samo** (wielkość liter nie ma znaczenia): `sodium.jar` nie pasuje do `sodium.txt`.
-- Nazwa (bez rozszerzenia) może być dokładna albo bardzo podobna. Wielkość liter oraz znaki `-`, `_`, `.` i spacja są traktowane jednakowo.
-- Dokładne dopasowanie ma 100%. Kolor etykiety: zielony 100%, żółty od 90%, pomarańczowy niżej.
+- The extension must be **identical** (case does not matter): `sodium.jar` does not match `sodium.txt`.
+- The name (without the extension) may be exact or very similar. Letter case and the characters `-`, `_`, `.` and space are treated alike.
+- An exact match scores 100%. Badge colour: green for 100%, yellow from 90%, orange below that.
 
-### Usuń wszystkie
+### Delete all
 
-Przycisk usuwa wszystkie trafienia od bieżącego do końca listy. Przed usunięciem pojawia się okno z potwierdzeniem (domyślnie zaznaczona jest odpowiedź „Nie”), w którym widać:
+The button deletes every match from the current one to the end of the list. Before anything is deleted, a confirmation dialog appears (the default answer is “No”) that shows:
 
-- ile plików zostanie usuniętych i czy trafią do Kosza, czy zostaną usunięte trwale,
-- ile z nich ma podobieństwo poniżej 100% i jakie jest najniższe,
-- ostrzeżenie, jeśli któreś pliki leżą na dysku bez Kosza (sieciowym lub wymiennym).
+- how many files will be deleted, and whether they go to the Recycle Bin or are deleted permanently,
+- how many of them have a similarity below 100%, and the lowest similarity,
+- a warning if some files are on a drive without a Recycle Bin (network or removable).
 
-Pliki wzorcowe (te, z których pobrano nazwy) są pomijane. Błąd przy jednym pliku nie przerywa usuwania pozostałych, a po zakończeniu pojawia się podsumowanie.
+Reference files (the ones the names were taken from) are skipped. An error on one file does not stop the rest, and a summary is shown at the end.
 
-## Bezpieczeństwo
+## Safety
 
-- Pliki domyślnie trafiają do **Kosza**. Opcja „Usuń trwale (bez Kosza)” wymaga dodatkowego potwierdzenia i **nie jest zapamiętywana**: przy każdym uruchomieniu jest wyłączona.
-- Foldery są usuwane tylko wtedy, gdy są całkowicie puste (ukryte pliki liczą się jako zawartość). Folder wybrany do przeszukania ani żaden folder nad nim nie zostanie usunięty.
-- Usunięcie pliku wzorcowego wymaga osobnego potwierdzenia.
-- Na dysku sieciowym lub pendrive (bez Kosza) program ostrzega, że plik zniknie na stałe.
-- Przycisk „Usuń” ignoruje kliknięcia w pierwszych 0,4 s po pokazaniu trafienia, żeby przypadkowe podwójne kliknięcie nie usunęło pliku, którego nie zdążyłeś zobaczyć.
-- Plik, który zniknął w trakcie przeglądu, jest automatycznie pomijany.
+- Files go to the **Recycle Bin** by default. “Delete permanently (skip Recycle Bin)” asks for an extra confirmation and is **not remembered**: it is off every time you start the app.
+- A folder is deleted only if it is completely empty (hidden files count as content). The folder you chose to search, and any folder above it, is never deleted.
+- Deleting a reference file requires a separate confirmation.
+- On a network drive or USB stick (no Recycle Bin) the app warns that the file will be gone for good.
+- The “Delete” button ignores clicks during the first 0.4 s after a match is shown, so an accidental double-click cannot delete a file you have not had time to see.
+- A file that disappeared during the review is skipped automatically.
 
-**Przed pierwszym użyciem na prawdziwych modach przetestuj program na kopii folderu.**
+**Try the app on a copy of your folder before using it on real mods.**
 
-## Ustawienia
+## Settings
 
-Program zapamiętuje ostatni folder do przeszukania, próg podobieństwa i motyw (jasny/ciemny; domyślnie taki jak w systemie) w pliku `%APPDATA%\ModDeleter\settings.json`. Uszkodzony lub brakujący plik jest ignorowany.
+The app remembers the last folder searched, the similarity threshold and the theme (light/dark; follows the system by default) in `%APPDATA%\ModDeleter\settings.json`. A missing or corrupted file is ignored.
 
-## Uruchamianie ze źródeł
+## Running from source
 
-Wymagany jest Python 3.11 lub nowszy.
+Python 3.11 or newer is required.
 
 ```bat
 python -m pip install -r requirements.txt
 python app.py
 ```
 
-### Budowanie pliku .exe
+### Building the .exe
 
 ```bat
 build.bat
 ```
 
-Skrypt instaluje zależności i buduje `dist\ModDeleter.exe` przez PyInstaller (`--onefile --windowed`).
+The script installs the dependencies and builds `dist\ModDeleter.exe` with PyInstaller (`--onefile --windowed`).
 
-### Testy
+### Tests
 
 ```bat
 python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Test z dowiązaniem symbolicznym jest pomijany, jeśli system nie daje uprawnień do ich tworzenia.
+The symlink test is skipped when the system does not allow creating symlinks.
 
-## Struktura projektu
+## Project layout
 
-| Plik | Rola |
+| File | Purpose |
 |---|---|
-| `finder.py` | Logika bez interfejsu: zbieranie nazw, dopasowanie, usuwanie plików i pustych folderów |
-| `app.py` | Okno (tkinter, `sv-ttk`, `tkinterdnd2`) |
-| `settings.py` | Zapis i odczyt ustawień |
-| `tests/` | Testy (`pytest`) |
-| `build.bat` | Budowanie `ModDeleter.exe` |
-| `docs/superpowers/` | Specyfikacja i plan implementacji |
+| `finder.py` | UI-free logic: collecting names, matching, deleting files and empty folders |
+| `app.py` | The window (tkinter, `sv-ttk`, `tkinterdnd2`) |
+| `settings.py` | Saving and loading settings |
+| `tests/` | Tests (`pytest`) |
+| `build.bat` | Builds `ModDeleter.exe` |
+| `docs/superpowers/` | Design spec and implementation plan (in Polish) |
 
-## Znane ograniczenia
+## Known limitations
 
-- Przy niskim progu podobieństwa (suwak sięga do 50%) pojawia się dużo luźno podobnych trafień. Każde wymaga kliknięcia, ale warto zacząć od wyższego progu.
-- Foldery, których nie da się odczytać, są pomijane bez komunikatu.
-- Aplikacja nie jest podpisana certyfikatem (patrz ostrzeżenie Windows wyżej).
+- With a low similarity threshold (the slider goes down to 50%) many loosely similar matches show up. Each one still needs a click, but it is best to start with a higher threshold.
+- Folders that cannot be read are skipped without a message.
+- The app is not code-signed (see the Windows warning above).
 
-## Historia zmian
+## Changelog
 
-Zobacz [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md).
