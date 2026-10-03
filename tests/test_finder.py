@@ -66,3 +66,93 @@ def test_collect_sources_has_no_duplicates(tmp_path):
 
 def test_collect_sources_ignores_missing_paths(tmp_path):
     assert finder.collect_sources([tmp_path / "nope"]) == []
+
+
+def sources_of(*names: str) -> list[finder.SourceFile]:
+    return [finder.SourceFile(n, Path("/src") / n) for n in names]
+
+
+def test_find_exact_match_in_nested_folders(tmp_path):
+    target = touch(tmp_path / "root" / "a" / "b" / "sodium-0.5.jar")
+    touch(tmp_path / "root" / "other.jar")
+    matches = finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root")
+    assert [m.path for m in matches] == [target]
+    assert matches[0].score == 100.0
+    assert matches[0].source_name == "sodium-0.5.jar"
+    assert matches[0].is_source is False
+
+
+def test_different_extension_is_not_a_match(tmp_path):
+    touch(tmp_path / "root" / "sodium.jar")
+    touch(tmp_path / "root" / "sodium.txt")
+    matches = finder.find_matches(sources_of("sodium.jar"), tmp_path / "root", 0)
+    assert [m.path.name for m in matches] == ["sodium.jar"]
+
+
+def test_extension_case_is_ignored(tmp_path):
+    touch(tmp_path / "root" / "sodium.JAR")
+    matches = finder.find_matches(sources_of("sodium.jar"), tmp_path / "root")
+    assert [m.path.name for m in matches] == ["sodium.JAR"]
+
+
+def test_fuzzy_match_also_requires_same_extension(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.6.txt")
+    assert finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root") == []
+
+
+def test_folders_are_never_matches(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.5.jar" / "readme.txt")
+    assert finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root") == []
+
+
+def test_fuzzy_match_respects_threshold(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.6.jar")
+    src = sources_of("sodium-0.5.jar")
+    assert len(finder.find_matches(src, tmp_path / "root", threshold=85)) == 1
+    assert finder.find_matches(src, tmp_path / "root", threshold=95) == []
+
+
+def test_matches_sorted_by_score_desc(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.6.jar")
+    touch(tmp_path / "root" / "deep" / "sodium-0.5.jar")
+    matches = finder.find_matches(sources_of("sodium-0.5.jar"), tmp_path / "root")
+    assert [m.path.name for m in matches] == ["sodium-0.5.jar", "sodium-0.6.jar"]
+    assert matches[0].score > matches[1].score
+
+
+def test_file_matching_several_sources_appears_once_with_best_score(tmp_path):
+    touch(tmp_path / "root" / "sodium-0.5.jar")
+    matches = finder.find_matches(
+        sources_of("sodium-0.6.jar", "sodium-0.5.jar"), tmp_path / "root"
+    )
+    assert len(matches) == 1
+    assert matches[0].score == 100.0
+    assert matches[0].source_name == "sodium-0.5.jar"
+
+
+def test_separator_only_names_match_nothing(tmp_path):
+    touch(tmp_path / "root" / "---.jar")
+    touch(tmp_path / "root" / "abc.jar")
+    assert finder.find_matches(sources_of("---.jar"), tmp_path / "root", 0) == []
+    assert finder.find_matches(sources_of("abc.jar"), tmp_path / "root", 0)[0].path.name == "abc.jar"
+
+
+def test_unicode_and_extensionless_names(tmp_path):
+    touch(tmp_path / "root" / "Żółć-1.0.jar")
+    touch(tmp_path / "root" / "LICENSE")
+    matches = finder.find_matches(sources_of("żółć_1.0.JAR", "license"), tmp_path / "root")
+    assert {m.path.name for m in matches} == {"Żółć-1.0.jar", "LICENSE"}
+
+
+def test_source_file_inside_search_root_is_flagged(tmp_path):
+    original = touch(tmp_path / "root" / "drop" / "x.jar")
+    copy = touch(tmp_path / "root" / "mods" / "x.jar")
+    sources = finder.collect_sources([tmp_path / "root" / "drop"])
+    matches = finder.find_matches(sources, tmp_path / "root")
+    flags = {m.path: m.is_source for m in matches}
+    assert flags == {original: True, copy: False}
+
+
+def test_empty_sources_returns_empty(tmp_path):
+    touch(tmp_path / "root" / "x.jar")
+    assert finder.find_matches([], tmp_path / "root") == []
