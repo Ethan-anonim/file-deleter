@@ -422,3 +422,172 @@ def test_missing_saved_root_is_ignored(app, tmp_path):
         assert fresh.search_root is None
     finally:
         other.destroy()
+
+
+def _record_dialog(monkeypatch, answer=True):
+    calls = []
+
+    def fake(title, message, **kwargs):
+        calls.append((title, message, kwargs))
+        return answer
+
+    monkeypatch.setattr(app_module.messagebox, "askyesno", fake)
+    return calls
+
+
+def test_delete_all_removes_every_remaining_match_and_empty_folders(app, tmp_path, monkeypatch):
+    names = ["a.jar", "b.jar", "c.jar"]
+    for n in names:
+        touch(tmp_path / "drop" / n)
+        touch(tmp_path / "mods" / "deep" / n)
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    search(app)
+    calls = _record_dialog(monkeypatch)
+    app.delete_all()
+    assert len(calls) == 1
+    assert not (tmp_path / "mods" / "deep").exists()
+    assert (tmp_path / "mods").exists()
+    assert app.deleted == 3
+    assert app.matches == []
+    assert _states(app) == ["disabled"] * 3
+    assert "Usunięto" in app.status.get() and "3" in app.status.get()
+
+
+def test_delete_all_asks_with_count_mode_and_defaults_to_no(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar"], permanent=False)
+    monkeypatch.setattr(app_module.finder, "drive_has_recycle_bin", lambda p: True)
+    calls = _record_dialog(monkeypatch, answer=False)
+    app.delete_all()
+    (title, message, kwargs), = calls
+    assert "2" in message and "Kosza" in message
+    assert kwargs.get("default") == "no"
+    assert kwargs.get("icon") == "warning"
+    assert all(m.path.exists() for m in app.matches)
+    assert app.deleted == 0
+    assert _states(app) == ["normal"] * 3
+
+
+def test_delete_all_message_says_permanent_when_permanent(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar"], permanent=True)
+    calls = _record_dialog(monkeypatch, answer=False)
+    app.delete_all()
+    assert "TRWALE" in calls[0][1]
+
+
+def test_delete_all_message_mentions_lower_similarity(app, tmp_path, monkeypatch):
+    touch(tmp_path / "drop" / "sodium-0.5.jar")
+    touch(tmp_path / "mods" / "sodium-0.5.jar")
+    touch(tmp_path / "mods" / "sodium-0.6.jar")
+    app.add_paths([tmp_path / "drop"])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    search(app)
+    calls = _record_dialog(monkeypatch, answer=False)
+    app.delete_all()
+    message = calls[0][1]
+    assert "poniżej 100%" in message
+    assert "1" in message and "90%" in message
+
+
+def test_delete_all_skips_source_files_and_reports_it(app, tmp_path, monkeypatch):
+    original = touch(tmp_path / "mods" / "keep" / "a.jar")
+    copy = touch(tmp_path / "mods" / "other" / "a.jar")
+    app.add_paths([original])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    search(app)
+    assert any(m.is_source for m in app.matches)
+    calls = _record_dialog(monkeypatch)
+    app.delete_all()
+    assert original.exists()
+    assert not copy.exists()
+    assert "wzorcow" in calls[0][1]
+    assert "wzorcow" in app.status.get()
+
+
+def test_delete_all_with_only_source_files_does_nothing(app, tmp_path, monkeypatch):
+    target = touch(tmp_path / "mods" / "a.jar")
+    app.add_paths([target])
+    app.set_search_root(tmp_path / "mods")
+    app.permanent.set(True)
+    search(app)
+    calls = _record_dialog(monkeypatch)
+    app.delete_all()
+    assert calls == []
+    assert target.exists()
+    assert "wzorcow" in app.status.get()
+    assert _states(app) == ["normal"] * 3
+
+
+def test_delete_all_starts_from_current_match(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar", "c.jar"])
+    first = app.matches[0].path
+    app.skip_current()
+    _record_dialog(monkeypatch)
+    app.delete_all()
+    assert first.exists()
+    assert app.deleted == 2
+
+
+def test_delete_all_ignores_vanished_files(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar", "c.jar"])
+    app.matches[1].path.unlink()
+    calls = _record_dialog(monkeypatch)
+    app.delete_all()
+    assert app.deleted == 2
+    assert "Pliki do usunięcia: 2" in calls[0][1]
+
+
+def test_delete_all_continues_after_an_error(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar", "c.jar"])
+    real = app_module.finder.delete_match
+    bad = app.matches[1].path
+
+    def flaky(path, root, permanent=False, **k):
+        if path == bad:
+            raise PermissionError("zablokowany")
+        return real(path, root, permanent=permanent, **k)
+
+    monkeypatch.setattr(app_module.finder, "delete_match", flaky)
+    _record_dialog(monkeypatch)
+    app.delete_all()
+    assert app.deleted == 2
+    assert bad.exists()
+    assert "zablokowany" in app.status.get()
+    assert "1" in app.status.get()
+
+
+def test_delete_all_warns_about_drives_without_recycle_bin(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar"], permanent=False)
+    monkeypatch.setattr(app_module.finder, "drive_has_recycle_bin", lambda p: False)
+    calls = _record_dialog(monkeypatch, answer=False)
+    app.delete_all()
+    message = calls[0][1]
+    assert "bez Kosza" in message and "2" in message
+
+
+def test_delete_all_uses_trash_mode_when_not_permanent(app, tmp_path, monkeypatch):
+    _setup(app, tmp_path, ["a.jar", "b.jar"], permanent=False)
+    monkeypatch.setattr(app_module.finder, "drive_has_recycle_bin", lambda p: True)
+    seen = []
+
+    def fake(path, root, permanent=False, **k):
+        seen.append(permanent)
+        return app_module.finder.DeleteResult(path, [])
+
+    monkeypatch.setattr(app_module.finder, "delete_match", fake)
+    _record_dialog(monkeypatch)
+    app.delete_all()
+    assert seen == [False, False]
+
+
+def test_delete_all_button_label_tracks_remaining_matches(app, tmp_path):
+    _setup(app, tmp_path, ["a.jar", "b.jar", "c.jar"])
+    assert app.delete_all_text.get() == "Usuń wszystkie (3)"
+    app.skip_current()
+    assert app.delete_all_text.get() == "Usuń wszystkie (2)"
+    app.finish()
+    assert str(app.btn_delete_all["state"]) == "disabled"
+    assert app.delete_all_text.get() == "Usuń wszystkie"

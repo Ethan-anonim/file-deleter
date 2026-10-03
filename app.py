@@ -19,6 +19,7 @@ VERSION = "1.1.0"
 CLICK_GUARD_SECONDS = 0.4
 POLL_MS = 80
 PROGRESS_EVERY = 100
+DELETE_ALL_LABEL = "Usuń wszystkie"
 
 PALETTES = {
     "dark": {
@@ -88,6 +89,7 @@ class App:
         self.match_path = tk.StringVar(value="")
         self.match_info = tk.StringVar(value="")
         self.warning = tk.StringVar(value="")
+        self.delete_all_text = tk.StringVar(value=DELETE_ALL_LABEL)
 
         if saved["theme"] == "system":
             self.theme = system_theme()
@@ -185,7 +187,8 @@ class App:
         self.btn_skip = ttk.Button(row, text="Pomiń", command=self._on_skip_click)
         self.btn_reveal = ttk.Button(row, text="Pokaż w Eksploratorze", command=self.reveal_current)
         self.btn_stop = ttk.Button(row, text="Zakończ", command=self.finish)
-        for b in (self.btn_delete, self.btn_skip, self.btn_reveal, self.btn_stop):
+        self.btn_delete_all = ttk.Button(row, textvariable=self.delete_all_text, command=self.delete_all)
+        for b in (self.btn_delete, self.btn_skip, self.btn_reveal, self.btn_stop, self.btn_delete_all):
             b.pack(side="left", padx=(0, 6))
         ttk.Checkbutton(row, text="Usuń trwale (bez Kosza)", variable=self.permanent).pack(side="right")
 
@@ -413,7 +416,7 @@ class App:
     # ---------- przegląd trafień ----------
     def _set_review_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
-        for b in (self.btn_delete, self.btn_skip, self.btn_reveal, self.btn_stop):
+        for b in (self.btn_delete, self.btn_skip, self.btn_reveal, self.btn_stop, self.btn_delete_all):
             b.configure(state=state)
 
     def _clear_review(self) -> None:
@@ -422,6 +425,7 @@ class App:
         self.match_info.set("")
         self.warning.set("")
         self.badge.pack_forget()
+        self.delete_all_text.set(DELETE_ALL_LABEL)
         self._set_review_enabled(False)
 
     def _show_badge(self, score: float) -> None:
@@ -452,6 +456,7 @@ class App:
                 names = ", ".join(str(p) for p in emptied)
                 notes.append(f"Po usunięciu zostaną też usunięte puste foldery: {names}")
             self.warning.set("\n".join(notes))
+            self.delete_all_text.set(f"{DELETE_ALL_LABEL} ({len(self.matches) - self.index})")
             self.shown_at = time.monotonic()
             self._set_review_enabled(True)
             return
@@ -515,6 +520,62 @@ class App:
         self.status.set(f"Usunięto: {match.path.name}{extra}")
         self.index += 1
         self._show_current()
+
+    def delete_all(self) -> None:
+        if not self.matches or self.index >= len(self.matches):
+            return
+        pending = [m for m in self.matches[self.index:] if m.path.is_file()]
+        targets = [m for m in pending if not m.is_source]
+        skipped_sources = len(pending) - len(targets)
+        if not targets:
+            self.status.set("Nie ma czego usunąć: pozostały tylko pliki wzorcowe."
+                            if skipped_sources else "Nie ma czego usunąć: pliki już nie istnieją.")
+            return
+        permanent = self.permanent.get()
+        lines = [f"Pliki do usunięcia: {len(targets)}"]
+        if permanent:
+            lines.append("Sposób: TRWALE, bez możliwości odzyskania.")
+        else:
+            lines.append("Sposób: pliki trafią do Kosza.")
+        below = [m for m in targets if m.score < 100]
+        if below:
+            lowest = min(m.score for m in below)
+            lines.append(f"W tym z podobieństwem poniżej 100%: {len(below)} (najniższe: {lowest:.0f}%).")
+        lines.append("Puste foldery po usuniętych plikach też zostaną usunięte.")
+        if skipped_sources:
+            lines.append(f"Pliki wzorcowe pominę: {skipped_sources}.")
+        if not permanent:
+            no_bin = [m for m in targets if not finder.drive_has_recycle_bin(m.path)]
+            if no_bin:
+                lines.append(f"UWAGA: {len(no_bin)} plików leży na dysku bez Kosza i zostanie usuniętych trwale.")
+        question = "Usunąć wszystkie pozostałe trafienia?\n\n" + "\n".join(lines)
+        if not messagebox.askyesno("Usuń wszystkie", question, icon="warning", default="no"):
+            return
+
+        self._set_review_enabled(False)
+        done = folders = errors = 0
+        for number, match in enumerate(targets, 1):
+            self.status.set(f"Usuwam {number} z {len(targets)}…")
+            self.root.update_idletasks()
+            try:
+                result = finder.delete_match(match.path, self.active_root, permanent=permanent)
+            except OSError as exc:
+                errors += 1
+                self.last_error = f"Nie udało się usunąć {match.path.name}: {exc}"
+                continue
+            done += 1
+            folders += len(result.removed_folders)
+        self.deleted += done
+        summary = f"Usunięto plików: {done}"
+        if folders:
+            summary += f" (+ {folders} pustych folderów)"
+        if errors:
+            summary += f". Błędy: {errors} (ostatni: {self.last_error})"
+        if skipped_sources:
+            summary += f". Pominięto plików wzorcowych: {skipped_sources}"
+        self.matches = []
+        self._clear_review()
+        self.status.set(summary + ".")
 
     def skip_current(self) -> None:
         if not self.matches or self.index >= len(self.matches):
