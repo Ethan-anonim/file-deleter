@@ -134,6 +134,18 @@ def folders_emptied_by(path: str | Path, root: str | Path) -> list[Path]:
     return emptied
 
 
+def drive_has_recycle_bin(path: str | Path) -> bool:
+    drive = os.path.splitdrive(os.path.abspath(path))[0]
+    if drive.startswith("\\\\") or drive.startswith("//"):
+        return False
+    try:
+        import ctypes
+        kind = ctypes.windll.kernel32.GetDriveTypeW(drive + "\\")
+    except Exception:
+        return True
+    return kind not in (2, 4)
+
+
 @dataclass(frozen=True)
 class DeleteResult:
     file: Path
@@ -147,7 +159,7 @@ def _remove(path: Path, permanent: bool, trash) -> None:
         else:
             os.remove(path)
     else:
-        trash(str(path.resolve()))
+        trash(os.path.abspath(path))
 
 
 def delete_match(path: str | Path, root: str | Path, permanent: bool = False,
@@ -159,8 +171,11 @@ def delete_match(path: str | Path, root: str | Path, permanent: bool = False,
     _remove(path, permanent, trash)
     removed: list[Path] = []
     for folder in emptied:
-        if any(folder.iterdir()):
+        try:
+            if any(folder.iterdir()):
+                break
+            _remove(folder, permanent, trash)
+        except OSError:
             break
-        _remove(folder, permanent, trash)
         removed.append(folder)
     return DeleteResult(path, removed)

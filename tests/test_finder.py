@@ -267,3 +267,65 @@ def test_trash_mode_sends_file_and_empty_folders_to_trash(tmp_path):
     result = finder.delete_match(target, root, permanent=False, trash=fake_trash)
     assert trashed == ["x.jar", "a"]
     assert [p.name for p in result.removed_folders] == ["a"]
+
+
+def test_trash_receives_abspath_not_resolved(tmp_path):
+    target = touch(tmp_path / "a" / "x.jar")
+    sneaky = tmp_path / "a" / ".." / "a" / "x.jar"
+    seen = []
+    finder.delete_match(sneaky, tmp_path, permanent=False, trash=seen.append)
+    import os
+    assert seen[0] == os.path.abspath(sneaky)
+    assert ".." not in Path(seen[0]).parts
+
+
+def test_trash_does_not_follow_symlink(tmp_path):
+    outside = touch(tmp_path / "outside" / "real.jar")
+    root = tmp_path / "root"
+    root.mkdir()
+    link = root / "real.jar"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinki niedostępne: {exc}")
+    seen = []
+    finder.delete_match(link, root, permanent=False, trash=seen.append)
+    assert seen[0] == str(link)
+
+
+def test_folder_failure_after_file_removed_keeps_result(tmp_path):
+    target = touch(tmp_path / "root" / "a" / "x.jar")
+    calls = []
+
+    def flaky_trash(p):
+        calls.append(p)
+        if len(calls) == 1:
+            Path(p).unlink()
+        else:
+            raise OSError("zablokowany folder")
+
+    result = finder.delete_match(target, tmp_path / "root", permanent=False, trash=flaky_trash)
+    assert not target.exists()
+    assert result.removed_folders == []
+
+
+def test_drive_has_recycle_bin_by_drive_type(monkeypatch):
+    import ctypes
+    kinds = {}
+
+    class K:
+        @staticmethod
+        def GetDriveTypeW(root):
+            return kinds["t"]
+
+    class W:
+        kernel32 = K
+
+    monkeypatch.setattr(ctypes, "windll", W, raising=False)
+    for kind, expected in ((3, True), (2, False), (4, False)):
+        kinds["t"] = kind
+        assert finder.drive_has_recycle_bin("C:\\mods\\a.jar") is expected
+
+
+def test_unc_path_has_no_recycle_bin():
+    assert finder.drive_has_recycle_bin("\\\\server\\share\\mods\\a.jar") is False

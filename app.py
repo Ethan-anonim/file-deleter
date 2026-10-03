@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -7,6 +8,8 @@ from tkinter import filedialog, messagebox, ttk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 import finder
+
+CLICK_GUARD_SECONDS = 0.4
 
 
 class App:
@@ -23,6 +26,7 @@ class App:
         self.index = 0
         self.deleted = 0
         self.last_error = ""
+        self.shown_at = 0.0
 
         self.permanent = tk.BooleanVar(value=False)
         self.threshold = tk.IntVar(value=85)
@@ -83,8 +87,8 @@ class App:
                  justify="left").pack(anchor="w", padx=6)
         row = ttk.Frame(rev)
         row.pack(fill="x", padx=6, pady=6)
-        self.btn_delete = ttk.Button(row, text="Usuń", command=self.delete_current)
-        self.btn_skip = ttk.Button(row, text="Pomiń", command=self.skip_current)
+        self.btn_delete = ttk.Button(row, text="Usuń", command=self._on_delete_click)
+        self.btn_skip = ttk.Button(row, text="Pomiń", command=self._on_skip_click)
         self.btn_stop = ttk.Button(row, text="Zakończ", command=self.finish)
         for b in (self.btn_delete, self.btn_skip, self.btn_stop):
             b.pack(side="left", padx=(0, 6))
@@ -180,22 +184,45 @@ class App:
         self._set_review_enabled(False)
 
     def _show_current(self) -> None:
-        if self.index >= len(self.matches):
-            self.finish()
+        while self.index < len(self.matches):
+            match = self.matches[self.index]
+            if not match.path.is_file():
+                self.status.set(f"Pominięto (plik już nie istnieje): {match.path.name}")
+                self.index += 1
+                continue
+            self.counter.set(f"Trafienie {self.index + 1} z {len(self.matches)}")
+            self.match_path.set(str(match.path))
+            self.match_info.set(f"Podobieństwo: {match.score:.0f}%   |   szukana nazwa: {match.source_name}")
+            notes = []
+            if match.is_source:
+                notes.append("UWAGA: to jest plik wzorcowy, z którego pobrano nazwę.")
+            try:
+                emptied = finder.folders_emptied_by(match.path, self.active_root)
+            except OSError:
+                emptied = []
+                notes.append("(nie można sprawdzić folderu)")
+            if emptied:
+                names = ", ".join(str(p) for p in emptied)
+                notes.append(f"Po usunięciu zostaną też usunięte puste foldery: {names}")
+            self.warning.set("\n".join(notes))
+            self.shown_at = time.monotonic()
+            self._set_review_enabled(True)
             return
-        match = self.matches[self.index]
-        self.counter.set(f"Trafienie {self.index + 1} z {len(self.matches)}")
-        self.match_path.set(str(match.path))
-        self.match_info.set(f"Podobieństwo: {match.score:.0f}%   |   szukana nazwa: {match.source_name}")
-        notes = []
-        if match.is_source:
-            notes.append("UWAGA: to jest plik wzorcowy, z którego pobrano nazwę.")
-        emptied = finder.folders_emptied_by(match.path, self.active_root)
-        if emptied:
-            names = ", ".join(str(p) for p in emptied)
-            notes.append(f"Po usunięciu zostaną też usunięte puste foldery: {names}")
-        self.warning.set("\n".join(notes))
-        self._set_review_enabled(True)
+        skipped = self.status.get()
+        self.finish()
+        if skipped.startswith("Pominięto"):
+            self.status.set(f"{self.status.get()}  ({skipped})")
+
+    def _click_too_soon(self) -> bool:
+        return time.monotonic() - self.shown_at < CLICK_GUARD_SECONDS
+
+    def _on_delete_click(self) -> None:
+        if not self._click_too_soon():
+            self.delete_current()
+
+    def _on_skip_click(self) -> None:
+        if not self._click_too_soon():
+            self.skip_current()
 
     def delete_current(self) -> None:
         if not self.matches or self.index >= len(self.matches):
@@ -205,6 +232,15 @@ class App:
         if permanent and not messagebox.askyesno(
                 "Usuń trwale", f"Usunąć trwale, bez Kosza?\n\n{match.path}"):
             return
+        if match.is_source and not messagebox.askyesno(
+                "Plik wzorcowy",
+                "To jest plik wzorcowy, z którego pobrano nazwę. Na pewno usunąć?"):
+            return
+        if not permanent and not finder.drive_has_recycle_bin(match.path):
+            if not messagebox.askyesno(
+                    "Brak Kosza",
+                    f"Ten dysk nie ma Kosza — plik zostanie usunięty trwale.\nKontynuować?\n\n{match.path}"):
+                return
         self._set_review_enabled(False)
         self.root.update_idletasks()
         try:
