@@ -287,7 +287,7 @@ def test_trash_does_not_follow_symlink(tmp_path):
     try:
         link.symlink_to(outside)
     except (OSError, NotImplementedError) as exc:
-        pytest.skip(f"symlinki niedostępne: {exc}")
+        pytest.skip(f"symlinks unavailable: {exc}")
     seen = []
     finder.delete_match(link, root, permanent=False, trash=seen.append)
     assert seen[0] == str(link)

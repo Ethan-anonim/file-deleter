@@ -183,7 +183,7 @@ def delete_match(path: str | Path, root: str | Path, permanent: bool = False,
                  trash=send2trash.send2trash) -> DeleteResult:
     path = Path(path)
     if path.is_dir():
-        raise IsADirectoryError(f"Nie usuwam folderów: {path}")
+        raise IsADirectoryError(f"Refusing to delete a folder: {path}")
     emptied = folders_emptied_by(path, root) if path.exists() else []
     _remove(path, permanent, trash)
     removed: list[Path] = []

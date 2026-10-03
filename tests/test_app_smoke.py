@@ -6,14 +6,30 @@ import tkinter as tk
 app_module = pytest.importorskip("app")
 
 
+def make_root(attempts=4):
+    """Create a Tk root; Tcl occasionally fails to initialise transiently on Windows, so retry."""
+    import time
+    from tkinterdnd2 import TkinterDnD
+
+    last = None
+    for _ in range(attempts):
+        try:
+            root = TkinterDnD.Tk()
+        except (tk.TclError, RuntimeError) as exc:
+            last = exc
+            time.sleep(0.3)
+            continue
+        root.withdraw()
+        return root
+    raise last
+
+
 @pytest.fixture
 def app(monkeypatch, tmp_path_factory):
     try:
-        from tkinterdnd2 import TkinterDnD
-        root = TkinterDnD.Tk()
-    except (tk.TclError, ImportError) as exc:
-        pytest.skip(f"brak środowiska graficznego: {exc}")
-    root.withdraw()
+        root = make_root()
+    except (tk.TclError, RuntimeError, ImportError) as exc:
+        pytest.skip(f"no graphical environment: {exc}")
     monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *a, **k: True)
     settings_file = tmp_path_factory.mktemp('cfg') / 'settings.json'
     instance = app_module.App(root, settings_file=settings_file)
@@ -23,7 +39,6 @@ def app(monkeypatch, tmp_path_factory):
 
 def search(app):
     app.start_search()
-    app.wait_for_search()
     app.wait_for_search()
 
 
@@ -207,11 +222,11 @@ def test_vanished_matches_are_skipped_and_buttons_consistent(app, tmp_path):
 def test_vanished_folder_does_not_lock_window(app, tmp_path, monkeypatch):
     _setup(app, tmp_path, ["a.jar", "b.jar"])
     def boom(*a, **k):
-        raise PermissionError("brak dostępu")
+        raise PermissionError("access denied")
     monkeypatch.setattr(app_module.finder, "folders_emptied_by", boom)
     app.skip_current()
     assert _states(app) == ["normal"] * 3
-    assert "nie można sprawdzić" in app.warning.get()
+    assert "cannot inspect" in app.warning.get()
 
 
 def test_all_remaining_vanished_ends_cleanly(app, tmp_path):
@@ -220,7 +235,7 @@ def test_all_remaining_vanished_ends_cleanly(app, tmp_path):
         m.path.unlink()
     app.skip_current()
     assert _states(app) == ["disabled"] * 3
-    assert "Koniec" in app.status.get()
+    assert "Done" in app.status.get()
 
 
 class FakeEvent:
@@ -289,7 +304,7 @@ def test_cancel_search(app, tmp_path, monkeypatch):
     app.start_search()
     app.cancel_search()
     app.wait_for_search()
-    assert "Anulowano" in app.status.get()
+    assert "cancelled" in app.status.get()
     assert app.matches == []
     assert str(app.btn_search["state"]) == "normal"
     assert str(app.btn_delete["state"]) == "disabled"
@@ -372,13 +387,13 @@ def test_sources_counter_follows_checkboxes(app, tmp_path):
     touch(tmp_path / "drop" / "a.jar")
     touch(tmp_path / "drop" / "b.jar")
     app.add_paths([tmp_path / "drop"])
-    assert app.sources_text.get() == "Zaznaczone: 2 z 2"
+    assert app.sources_text.get() == "Selected: 2 of 2"
     key = next(iter(app.sources))
     app.checked[key] = False
     app._refresh_sources_text()
-    assert app.sources_text.get() == "Zaznaczone: 1 z 2"
+    assert app.sources_text.get() == "Selected: 1 of 2"
     app.clear_sources()
-    assert app.sources_text.get() == "Lista jest pusta"
+    assert app.sources_text.get() == "List is empty"
 
 
 def test_theme_toggle_switches_and_persists(app):
@@ -399,8 +414,7 @@ def test_settings_restored_on_next_start(app, tmp_path):
     app.toggle_theme()
     app._save_settings()
     chosen_theme = app.theme
-    second_root = type(app.root)()
-    second_root.withdraw()
+    second_root = make_root()
     try:
         second = app_module.App(second_root, settings_file=app.settings_file)
         assert second.search_root == mods
@@ -415,8 +429,7 @@ def test_missing_saved_root_is_ignored(app, tmp_path):
     import settings
     settings.save({"theme": "dark", "last_root": str(tmp_path / "gone"), "threshold": 85},
                   app.settings_file)
-    other = type(app.root)()
-    other.withdraw()
+    other = make_root()
     try:
         fresh = app_module.App(other, settings_file=app.settings_file)
         assert fresh.search_root is None
@@ -452,7 +465,7 @@ def test_delete_all_removes_every_remaining_match_and_empty_folders(app, tmp_pat
     assert app.deleted == 3
     assert app.matches == []
     assert _states(app) == ["disabled"] * 3
-    assert "Usunięto" in app.status.get() and "3" in app.status.get()
+    assert "deleted" in app.status.get() and "3" in app.status.get()
 
 
 def test_delete_all_asks_with_count_mode_and_defaults_to_no(app, tmp_path, monkeypatch):
@@ -461,7 +474,7 @@ def test_delete_all_asks_with_count_mode_and_defaults_to_no(app, tmp_path, monke
     calls = _record_dialog(monkeypatch, answer=False)
     app.delete_all()
     (title, message, kwargs), = calls
-    assert "2" in message and "Kosza" in message
+    assert "2" in message and "Recycle Bin" in message
     assert kwargs.get("default") == "no"
     assert kwargs.get("icon") == "warning"
     assert all(m.path.exists() for m in app.matches)
@@ -473,7 +486,7 @@ def test_delete_all_message_says_permanent_when_permanent(app, tmp_path, monkeyp
     _setup(app, tmp_path, ["a.jar"], permanent=True)
     calls = _record_dialog(monkeypatch, answer=False)
     app.delete_all()
-    assert "TRWALE" in calls[0][1]
+    assert "PERMANENTLY" in calls[0][1]
 
 
 def test_delete_all_message_mentions_lower_similarity(app, tmp_path, monkeypatch):
@@ -487,7 +500,7 @@ def test_delete_all_message_mentions_lower_similarity(app, tmp_path, monkeypatch
     calls = _record_dialog(monkeypatch, answer=False)
     app.delete_all()
     message = calls[0][1]
-    assert "poniżej 100%" in message
+    assert "below 100%" in message
     assert "1" in message and "90%" in message
 
 
@@ -503,8 +516,8 @@ def test_delete_all_skips_source_files_and_reports_it(app, tmp_path, monkeypatch
     app.delete_all()
     assert original.exists()
     assert not copy.exists()
-    assert "wzorcow" in calls[0][1]
-    assert "wzorcow" in app.status.get()
+    assert "eference" in calls[0][1]
+    assert "eference" in app.status.get()
 
 
 def test_delete_all_with_only_source_files_does_nothing(app, tmp_path, monkeypatch):
@@ -517,7 +530,7 @@ def test_delete_all_with_only_source_files_does_nothing(app, tmp_path, monkeypat
     app.delete_all()
     assert calls == []
     assert target.exists()
-    assert "wzorcow" in app.status.get()
+    assert "eference" in app.status.get()
     assert _states(app) == ["normal"] * 3
 
 
@@ -537,7 +550,7 @@ def test_delete_all_ignores_vanished_files(app, tmp_path, monkeypatch):
     calls = _record_dialog(monkeypatch)
     app.delete_all()
     assert app.deleted == 2
-    assert "Pliki do usunięcia: 2" in calls[0][1]
+    assert "Files to delete: 2" in calls[0][1]
 
 
 def test_delete_all_continues_after_an_error(app, tmp_path, monkeypatch):
@@ -565,7 +578,7 @@ def test_delete_all_warns_about_drives_without_recycle_bin(app, tmp_path, monkey
     calls = _record_dialog(monkeypatch, answer=False)
     app.delete_all()
     message = calls[0][1]
-    assert "bez Kosza" in message and "2" in message
+    assert "without a Recycle Bin" in message and "2" in message
 
 
 def test_delete_all_uses_trash_mode_when_not_permanent(app, tmp_path, monkeypatch):
@@ -585,9 +598,9 @@ def test_delete_all_uses_trash_mode_when_not_permanent(app, tmp_path, monkeypatc
 
 def test_delete_all_button_label_tracks_remaining_matches(app, tmp_path):
     _setup(app, tmp_path, ["a.jar", "b.jar", "c.jar"])
-    assert app.delete_all_text.get() == "Usuń wszystkie (3)"
+    assert app.delete_all_text.get() == "Delete all (3)"
     app.skip_current()
-    assert app.delete_all_text.get() == "Usuń wszystkie (2)"
+    assert app.delete_all_text.get() == "Delete all (2)"
     app.finish()
     assert str(app.btn_delete_all["state"]) == "disabled"
-    assert app.delete_all_text.get() == "Usuń wszystkie"
+    assert app.delete_all_text.get() == "Delete all"

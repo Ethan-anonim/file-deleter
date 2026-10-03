@@ -1,38 +1,47 @@
-# Historia zmian
+# Changelog
 
-Format wzorowany na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
+Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [1.2.0] - 2026-10-03
+
+### Changed
+- **All user-facing text is now in English**: every label, button, dialog, status message and error message in the app, plus the README, this changelog, the release notes and the build script output. (The app was Polish-only in 1.0.0 and 1.1.0.)
+- The version number shown in the window is now 1.2.0.
+
+### Fixed
+- Tests no longer skip silently when Tk fails to initialise transiently on Windows; window creation is retried first.
 
 ## [1.1.0] - 2026-10-03
 
-Nowy wygląd i wygodniejsza praca. Zasady dopasowania i usuwania pozostały bez zmian.
+A new look and a more comfortable workflow. The matching and deletion rules are unchanged.
 
-### Dodano
-- **Usuń wszystkie (N)** — usuwa wszystkie pozostałe trafienia naraz, po potwierdzeniu z podsumowaniem (liczba plików, Kosz czy trwale, ile ma podobieństwo poniżej 100%). Pliki wzorcowe są pomijane, a błąd przy jednym pliku nie przerywa reszty.
-- Nowoczesny motyw w stylu Windows 11, jasny i ciemny (domyślnie taki jak w systemie), z przyciskiem przełączania.
-- Duża strefa przeciągania z podświetleniem po najechaniu plikiem oraz licznik „Zaznaczone: N z M”.
-- Szukanie w tle z paskiem postępu, licznikiem przeszukanych plików i przyciskiem **Anuluj**. Okno nie zawiesza się przy dużych folderach.
-- Kolorowa etykieta podobieństwa przy trafieniu (zielona 100%, żółta od 90%, pomarańczowa niżej).
-- Przycisk **Pokaż w Eksploratorze**.
-- Zapamiętywanie ostatniego folderu do przeszukania, progu podobieństwa i motywu (`%APPDATA%\ModDeleter\settings.json`). Opcja „Usuń trwale” celowo nie jest zapamiętywana.
-- README oraz ten plik.
+### Added
+- **Delete all (N)** — deletes all remaining matches at once after a confirmation that summarises the action (number of files, Recycle Bin or permanent, how many have a similarity below 100%). Reference files are skipped, and an error on one file does not stop the rest.
+- A modern Windows 11 style theme, light and dark (follows the system by default), with a toggle button.
+- A large drag-and-drop zone that highlights when you hover over it with files, and a “Selected: N of M” counter.
+- Background search with a progress bar, a scanned-files counter and a **Cancel** button. The window no longer freezes on large folders.
+- A colour-coded similarity badge on each match (green 100%, yellow from 90%, orange below).
+- A **Show in Explorer** button.
+- Remembering the last search folder, the similarity threshold and the theme (`%APPDATA%\ModDeleter\settings.json`). “Delete permanently” is deliberately not remembered.
+- README and this changelog.
 
-### Zmieniono
-- Okno można rozciągać; układ w kartach.
-- `finder.find_matches` przyjmuje opcjonalne `on_progress`, `should_cancel` i `progress_every` (dotychczasowe wywołania działają bez zmian) i może rzucić `SearchCancelled`.
-- `build.bat` dołącza pliki motywu (`--collect-all sv_ttk`). Nowe zależności: `sv-ttk`, `darkdetect`.
+### Changed
+- The window is resizable; the layout uses cards.
+- `finder.find_matches` accepts optional `on_progress`, `should_cancel` and `progress_every` (existing calls keep working) and can raise `SearchCancelled`.
+- `build.bat` bundles the theme files (`--collect-all sv_ttk`). New dependencies: `sv-ttk`, `darkdetect`.
 
-### Znane ograniczenia
-- Prawdziwe przeciąganie plików myszką i anulowanie w trakcie długiego szukania nie zostały sprawdzone ręcznie (testy używają symulowanych zdarzeń).
+### Known limitations
+- Real mouse drag-and-drop and cancelling during a long search were not checked by hand (the tests use simulated events).
 
 ## [1.0.0] - 2026-10-03
 
-Pierwsze wydanie.
+First release.
 
-### Dodano
-- Okno z przeciąganiem folderów i plików: z nich pobierane są nazwy plików do wyszukania, każdą można odznaczyć.
-- Wyszukiwanie w wybranym folderze (razem z podfolderami) plików o takim samym rozszerzeniu i dokładnej lub bardzo podobnej nazwie; suwak progu podobieństwa (domyślnie 85%).
-- Przegląd trafień jedno po drugim: pełna ścieżka, procent podobieństwa, przyciski Usuń / Pomiń / Zakończ.
-- Usuwanie tylko plików; puste foldery po usuniętym pliku też są usuwane (nigdy folder główny wyszukiwania ani nic nad nim, nigdy foldery niepuste).
-- Domyślnie usuwanie do Kosza; „Usuń trwale” z dodatkowym potwierdzeniem.
-- Zabezpieczenia: potwierdzenie przy usuwaniu pliku wzorcowego, ostrzeżenie dla dysków bez Kosza (sieciowych i wymiennych), ochrona przed przypadkowym podwójnym kliknięciem, automatyczne pomijanie plików, które zniknęły w trakcie przeglądu.
-- `build.bat` budujący pojedynczy plik `ModDeleter.exe`.
+### Added
+- A window with drag-and-drop of folders and files: the file names are collected from them as search patterns, and each can be unticked.
+- Searching the chosen folder (including subfolders) for files with the same extension and an exact or very similar name; a similarity threshold slider (default 85%).
+- Reviewing matches one by one: full path, similarity percentage, Delete / Skip / Finish buttons.
+- Deleting files only; folders left empty after a deletion are removed too (never the search root or anything above it, never non-empty folders).
+- The Recycle Bin by default; “Delete permanently” with an extra confirmation.
+- Safeguards: confirmation before deleting a reference file, a warning for drives without a Recycle Bin (network and removable), protection against accidental double-clicks, and automatic skipping of files that vanish during the review.
+- `build.bat`, which builds a single `ModDeleter.exe`.

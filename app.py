@@ -15,11 +15,11 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 import finder
 import settings as settings_store
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 CLICK_GUARD_SECONDS = 0.4
 POLL_MS = 80
 PROGRESS_EVERY = 100
-DELETE_ALL_LABEL = "Usuń wszystkie"
+DELETE_ALL_LABEL = "Delete all"
 
 PALETTES = {
     "dark": {
@@ -82,7 +82,7 @@ class App:
         self.threshold = tk.IntVar(value=saved["threshold"])
         self.threshold_text = tk.StringVar(value=f"{saved['threshold']}%")
         self.status = tk.StringVar(value="")
-        self.root_label = tk.StringVar(value="(nie wybrano folderu)")
+        self.root_label = tk.StringVar(value="(no folder selected)")
         self.sources_text = tk.StringVar(value="")
         self.progress_text = tk.StringVar(value="")
         self.counter = tk.StringVar(value="")
@@ -107,7 +107,7 @@ class App:
         self._refresh_sources_text()
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ---------- budowa okna ----------
+    # ---------- window layout ----------
     def _build(self) -> None:
         outer = ttk.Frame(self.root, padding=14)
         outer.pack(fill="both", expand=True)
@@ -119,15 +119,15 @@ class App:
         self.btn_theme = ttk.Button(header, command=self.toggle_theme)
         self.btn_theme.pack(side="right")
 
-        src = ttk.LabelFrame(outer, text="1. Czego szukam", padding=10)
+        src = ttk.LabelFrame(outer, text="1. What to look for", padding=10)
         src.pack(fill="both", expand=True, pady=(0, 8))
         self.drop_canvas = tk.Canvas(src, height=96, highlightthickness=0, bd=0)
         self.drop_canvas.pack(fill="x")
         self.drop_canvas.bind("<Configure>", lambda _e: self._draw_drop_zone())
         self.tree = ttk.Treeview(src, columns=("use", "name", "from"), show="headings", height=5)
-        self.tree.heading("use", text="Szukaj")
-        self.tree.heading("name", text="Nazwa pliku")
-        self.tree.heading("from", text="Pochodzi z")
+        self.tree.heading("use", text="Use")
+        self.tree.heading("name", text="File name")
+        self.tree.heading("from", text="From")
         self.tree.column("use", width=60, anchor="center", stretch=False)
         self.tree.column("name", width=300)
         self.tree.column("from", width=420)
@@ -135,9 +135,9 @@ class App:
         self.tree.bind("<Button-1>", self._on_tree_click)
         row = ttk.Frame(src)
         row.pack(fill="x")
-        ttk.Button(row, text="Dodaj pliki…", command=self._pick_files).pack(side="left")
-        ttk.Button(row, text="Dodaj folder…", command=self._pick_source_folder).pack(side="left", padx=6)
-        ttk.Button(row, text="Wyczyść listę", command=self.clear_sources).pack(side="left")
+        ttk.Button(row, text="Add files…", command=self._pick_files).pack(side="left")
+        ttk.Button(row, text="Add folder…", command=self._pick_source_folder).pack(side="left", padx=6)
+        ttk.Button(row, text="Clear list", command=self.clear_sources).pack(side="left")
         ttk.Label(row, textvariable=self.sources_text, foreground="gray").pack(side="right")
         for widget in (self.drop_canvas, self.tree, src):
             widget.drop_target_register(DND_FILES)
@@ -145,23 +145,23 @@ class App:
             widget.dnd_bind("<<DropLeave>>", self._on_drop_leave)
             widget.dnd_bind("<<Drop>>", self._on_drop)
 
-        where = ttk.LabelFrame(outer, text="2. Gdzie szukam", padding=10)
+        where = ttk.LabelFrame(outer, text="2. Where to search", padding=10)
         where.pack(fill="x", pady=(0, 8))
         row = ttk.Frame(where)
         row.pack(fill="x")
-        self.btn_root = ttk.Button(row, text="Wybierz folder…", command=self._pick_search_root)
+        self.btn_root = ttk.Button(row, text="Choose folder…", command=self._pick_search_root)
         self.btn_root.pack(side="left")
         ttk.Label(row, textvariable=self.root_label).pack(side="left", padx=10)
         row = ttk.Frame(where)
         row.pack(fill="x", pady=(10, 0))
-        ttk.Label(row, text="Minimalne podobieństwo nazwy:").pack(side="left")
+        ttk.Label(row, text="Minimum name similarity:").pack(side="left")
         self.scale = ttk.Scale(row, from_=settings_store.THRESHOLD_MIN, to=settings_store.THRESHOLD_MAX,
                                orient="horizontal", length=240, command=self._on_scale)
         self.scale.pack(side="left", padx=10)
         ttk.Label(row, textvariable=self.threshold_text, width=5).pack(side="left")
-        self.btn_cancel = ttk.Button(row, text="Anuluj", command=self.cancel_search)
+        self.btn_cancel = ttk.Button(row, text="Cancel", command=self.cancel_search)
         self.btn_cancel.pack(side="right")
-        self.btn_search = ttk.Button(row, text="Szukaj", style="Accent.TButton", command=self.start_search)
+        self.btn_search = ttk.Button(row, text="Search", style="Accent.TButton", command=self.start_search)
         self.btn_search.pack(side="right", padx=(0, 6))
         row = ttk.Frame(where)
         row.pack(fill="x", pady=(10, 0))
@@ -169,7 +169,7 @@ class App:
         self.progress.pack(side="left", fill="x", expand=True)
         ttk.Label(row, textvariable=self.progress_text, width=30, anchor="e").pack(side="left", padx=(10, 0))
 
-        rev = ttk.LabelFrame(outer, text="3. Trafienia", padding=10)
+        rev = ttk.LabelFrame(outer, text="3. Matches", padding=10)
         rev.pack(fill="x", pady=(0, 8))
         ttk.Label(rev, textvariable=self.counter, foreground="gray").pack(anchor="w")
         ttk.Label(rev, textvariable=self.match_path, wraplength=840,
@@ -183,23 +183,23 @@ class App:
         self.warning_label.pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(rev)
         row.pack(fill="x", pady=(10, 0))
-        self.btn_delete = ttk.Button(row, text="Usuń", style="Accent.TButton", command=self._on_delete_click)
-        self.btn_skip = ttk.Button(row, text="Pomiń", command=self._on_skip_click)
-        self.btn_reveal = ttk.Button(row, text="Pokaż w Eksploratorze", command=self.reveal_current)
-        self.btn_stop = ttk.Button(row, text="Zakończ", command=self.finish)
+        self.btn_delete = ttk.Button(row, text="Delete", style="Accent.TButton", command=self._on_delete_click)
+        self.btn_skip = ttk.Button(row, text="Skip", command=self._on_skip_click)
+        self.btn_reveal = ttk.Button(row, text="Show in Explorer", command=self.reveal_current)
+        self.btn_stop = ttk.Button(row, text="Finish", command=self.finish)
         self.btn_delete_all = ttk.Button(row, textvariable=self.delete_all_text, command=self.delete_all)
         for b in (self.btn_delete, self.btn_skip, self.btn_reveal, self.btn_stop, self.btn_delete_all):
             b.pack(side="left", padx=(0, 6))
-        ttk.Checkbutton(row, text="Usuń trwale (bez Kosza)", variable=self.permanent).pack(side="right")
+        ttk.Checkbutton(row, text="Delete permanently (skip Recycle Bin)", variable=self.permanent).pack(side="right")
 
         ttk.Label(outer, textvariable=self.status, foreground="gray").pack(anchor="w")
 
-    # ---------- motyw ----------
+    # ---------- theme ----------
     def apply_theme(self, name: str) -> None:
         self.theme = name
         self.palette = PALETTES[name]
         sv_ttk.set_theme(name, self.root)
-        self.btn_theme.configure(text="Motyw: jasny" if name == "dark" else "Motyw: ciemny")
+        self.btn_theme.configure(text="Theme: light" if name == "dark" else "Theme: dark")
         self.warning_label.configure(foreground=self.palette["warn"])
         self._draw_drop_zone()
 
@@ -207,7 +207,7 @@ class App:
         self.apply_theme("light" if self.theme == "dark" else "dark")
         self._save_settings()
 
-    # ---------- strefa przeciągania ----------
+    # ---------- drop zone ----------
     def _draw_drop_zone(self) -> None:
         c = self.drop_canvas
         w, h = max(c.winfo_width(), 2), max(c.winfo_height(), 2)
@@ -216,9 +216,9 @@ class App:
         c.configure(bg=p["drop_hover"] if self._hover else p["drop_bg"])
         c.create_rectangle(4, 4, w - 4, h - 4, outline=p["accent"] if self._hover else p["border"],
                            dash=(6, 4), width=2)
-        title = "Upuść tutaj" if self._hover else "Przeciągnij tutaj foldery lub pliki"
+        title = "Drop here" if self._hover else "Drag folders or files here"
         c.create_text(w / 2, h / 2 - 10, text=title, fill=p["text"], font=("Segoe UI", 13, "bold"))
-        c.create_text(w / 2, h / 2 + 16, text="z nich pobiorę nazwy plików do wyszukania",
+        c.create_text(w / 2, h / 2 + 16, text="their file names will be used as search patterns",
                       fill=p["muted"], font=("Segoe UI", 10))
 
     def _on_drop_enter(self, event):
@@ -237,14 +237,14 @@ class App:
         self.add_paths(self.root.tk.splitlist(event.data))
         return event.action
 
-    # ---------- lista źródeł ----------
+    # ---------- source list ----------
     def _pick_files(self) -> None:
-        paths = filedialog.askopenfilenames(title="Wybierz pliki")
+        paths = filedialog.askopenfilenames(title="Choose files")
         if paths:
             self.add_paths(paths)
 
     def _pick_source_folder(self) -> None:
-        path = filedialog.askdirectory(title="Wybierz folder ze wzorcami")
+        path = filedialog.askdirectory(title="Choose a folder with reference files")
         if path:
             self.add_paths([path])
 
@@ -255,7 +255,7 @@ class App:
                 self.sources[key] = source
                 self.checked[key] = True
         self._refresh_tree()
-        self.status.set(f"Na liście: {len(self.sources)} nazw plików.")
+        self.status.set(f"{len(self.sources)} file names on the list.")
 
     def clear_sources(self) -> None:
         self.sources.clear()
@@ -265,7 +265,7 @@ class App:
     def _refresh_sources_text(self) -> None:
         total = len(self.sources)
         used = sum(1 for k in self.sources if self.checked.get(k))
-        self.sources_text.set(f"Zaznaczone: {used} z {total}" if total else "Lista jest pusta")
+        self.sources_text.set(f"Selected: {used} of {total}" if total else "List is empty")
 
     def _refresh_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
@@ -286,14 +286,14 @@ class App:
             self.tree.set(key, "use", "☑" if self.checked[key] else "☐")
             self._refresh_sources_text()
 
-    # ---------- wybór folderu i szukanie ----------
+    # ---------- folder choice and search ----------
     def _on_scale(self, value) -> None:
         rounded = round(float(value))
         self.threshold.set(rounded)
         self.threshold_text.set(f"{rounded}%")
 
     def _pick_search_root(self) -> None:
-        path = filedialog.askdirectory(title="Wybierz folder do przeszukania")
+        path = filedialog.askdirectory(title="Choose a folder to search")
         if path:
             self.set_search_root(path)
 
@@ -317,10 +317,10 @@ class App:
             return
         chosen = [s for k, s in self.sources.items() if self.checked.get(k)]
         if not chosen:
-            messagebox.showinfo("Mod Deleter", "Lista „Czego szukam” jest pusta lub nic nie jest zaznaczone.")
+            messagebox.showinfo("Mod Deleter", "The “What to look for” list is empty or nothing is selected.")
             return
         if self.search_root is None or not self.search_root.is_dir():
-            messagebox.showinfo("Mod Deleter", "Najpierw wybierz folder do przeszukania.")
+            messagebox.showinfo("Mod Deleter", "Choose a folder to search first.")
             return
         self.active_root = self.search_root
         threshold = float(self.threshold.get())
@@ -336,8 +336,8 @@ class App:
         self._scanned = 0
         self.searching = True
         self._set_search_ui(True)
-        self.progress_text.set("Przeszukano 0 plików…")
-        self.status.set("Szukam…")
+        self.progress_text.set("Scanned 0 files…")
+        self.status.set("Searching…")
 
         results, cancel, root_dir = self._results, self._cancel, self.active_root
 
@@ -361,7 +361,7 @@ class App:
     def cancel_search(self) -> None:
         if self.searching:
             self._cancel.set()
-            self.status.set("Anuluję…")
+            self.status.set("Cancelling…")
 
     def _drain_results(self) -> bool:
         """Handle queued worker messages; True once the search has ended."""
@@ -372,7 +372,7 @@ class App:
                 return not self.searching
             if kind == "progress":
                 self._scanned = payload
-                self.progress_text.set(f"Przeszukano {payload} plików…")
+                self.progress_text.set(f"Scanned {payload} files…")
                 continue
             self._end_search(kind, payload)
             return True
@@ -386,7 +386,7 @@ class App:
         deadline = time.monotonic() + timeout
         while self.searching:
             if time.monotonic() > deadline:
-                raise TimeoutError("wyszukiwanie trwa za długo")
+                raise TimeoutError("search is taking too long")
             self._drain_results()
             self.root.update()
             time.sleep(0.005)
@@ -399,21 +399,21 @@ class App:
             self._poll_job = None
         if kind == "cancelled":
             self.progress_text.set("")
-            self.status.set("Anulowano wyszukiwanie.")
+            self.status.set("Search cancelled.")
         elif kind == "error":
             self.progress_text.set("")
-            self.status.set(f"Błąd wyszukiwania: {payload}")
+            self.status.set(f"Search error: {payload}")
         else:
             self.matches = payload
-            self.progress_text.set(f"Przeszukano {self._scanned} plików")
+            self.progress_text.set(f"Scanned {self._scanned} files")
             if not self.matches:
-                self.status.set("Nie znaleziono pasujących plików.")
+                self.status.set("No matching files found.")
                 self._clear_review()
             else:
-                self.status.set(f"Znaleziono trafień: {len(self.matches)}.")
+                self.status.set(f"Matches found: {len(self.matches)}.")
                 self._show_current()
 
-    # ---------- przegląd trafień ----------
+    # ---------- match review ----------
     def _set_review_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         for b in (self.btn_delete, self.btn_skip, self.btn_reveal, self.btn_stop, self.btn_delete_all):
@@ -437,24 +437,24 @@ class App:
         while self.index < len(self.matches):
             match = self.matches[self.index]
             if not match.path.is_file():
-                self.status.set(f"Pominięto (plik już nie istnieje): {match.path.name}")
+                self.status.set(f"Skipped (file no longer exists): {match.path.name}")
                 self.index += 1
                 continue
-            self.counter.set(f"Trafienie {self.index + 1} z {len(self.matches)}")
+            self.counter.set(f"Match {self.index + 1} of {len(self.matches)}")
             self.match_path.set(str(match.path))
-            self.match_info.set(f"szukana nazwa: {match.source_name}")
+            self.match_info.set(f"looking for: {match.source_name}")
             self._show_badge(match.score)
             notes = []
             if match.is_source:
-                notes.append("UWAGA: to jest plik wzorcowy, z którego pobrano nazwę.")
+                notes.append("WARNING: this is the reference file the name was taken from.")
             try:
                 emptied = finder.folders_emptied_by(match.path, self.active_root)
             except OSError:
                 emptied = []
-                notes.append("(nie można sprawdzić folderu)")
+                notes.append("(cannot inspect the folder)")
             if emptied:
                 names = ", ".join(str(p) for p in emptied)
-                notes.append(f"Po usunięciu zostaną też usunięte puste foldery: {names}")
+                notes.append(f"Empty folders will also be deleted afterwards: {names}")
             self.warning.set("\n".join(notes))
             self.delete_all_text.set(f"{DELETE_ALL_LABEL} ({len(self.matches) - self.index})")
             self.shown_at = time.monotonic()
@@ -462,7 +462,7 @@ class App:
             return
         skipped = self.status.get()
         self.finish()
-        if skipped.startswith("Pominięto"):
+        if skipped.startswith("Skipped"):
             self.status.set(f"{self.status.get()}  ({skipped})")
 
     def _click_too_soon(self) -> bool:
@@ -486,7 +486,7 @@ class App:
             else:
                 subprocess.Popen(["explorer", str(path.parent)])
         except OSError as exc:
-            self.status.set(f"Nie można otworzyć Eksploratora: {exc}")
+            self.status.set(f"Cannot open Explorer: {exc}")
 
     def delete_current(self) -> None:
         if not self.matches or self.index >= len(self.matches):
@@ -494,30 +494,30 @@ class App:
         match = self.matches[self.index]
         permanent = self.permanent.get()
         if permanent and not messagebox.askyesno(
-                "Usuń trwale", f"Usunąć trwale, bez Kosza?\n\n{match.path}"):
+                "Delete permanently", f"Delete permanently, bypassing the Recycle Bin?\n\n{match.path}"):
             return
         if match.is_source and not messagebox.askyesno(
-                "Plik wzorcowy",
-                "To jest plik wzorcowy, z którego pobrano nazwę. Na pewno usunąć?"):
+                "Reference file",
+                "This is the reference file the name was taken from. Delete it anyway?"):
             return
         if not permanent and not finder.drive_has_recycle_bin(match.path):
             if not messagebox.askyesno(
-                    "Brak Kosza",
-                    f"Ten dysk nie ma Kosza — plik zostanie usunięty trwale.\nKontynuować?\n\n{match.path}"):
+                    "No Recycle Bin",
+                    f"This drive has no Recycle Bin — the file will be deleted permanently.\nContinue?\n\n{match.path}"):
                 return
         self._set_review_enabled(False)
         self.root.update_idletasks()
         try:
             result = finder.delete_match(match.path, self.active_root, permanent=permanent)
         except OSError as exc:
-            self.last_error = f"Nie udało się usunąć {match.path.name}: {exc}"
+            self.last_error = f"Could not delete {match.path.name}: {exc}"
             self.status.set(self.last_error)
             self.index += 1
             self._show_current()
             return
         self.deleted += 1
-        extra = f" (+ {len(result.removed_folders)} pustych folderów)" if result.removed_folders else ""
-        self.status.set(f"Usunięto: {match.path.name}{extra}")
+        extra = f" (+ {len(result.removed_folders)} empty folders)" if result.removed_folders else ""
+        self.status.set(f"Deleted: {match.path.name}{extra}")
         self.index += 1
         self._show_current()
 
@@ -528,51 +528,51 @@ class App:
         targets = [m for m in pending if not m.is_source]
         skipped_sources = len(pending) - len(targets)
         if not targets:
-            self.status.set("Nie ma czego usunąć: pozostały tylko pliki wzorcowe."
-                            if skipped_sources else "Nie ma czego usunąć: pliki już nie istnieją.")
+            self.status.set("Nothing to delete: only reference files remain."
+                            if skipped_sources else "Nothing to delete: the files no longer exist.")
             return
         permanent = self.permanent.get()
-        lines = [f"Pliki do usunięcia: {len(targets)}"]
+        lines = [f"Files to delete: {len(targets)}"]
         if permanent:
-            lines.append("Sposób: TRWALE, bez możliwości odzyskania.")
+            lines.append("Method: PERMANENTLY, cannot be undone.")
         else:
-            lines.append("Sposób: pliki trafią do Kosza.")
+            lines.append("Method: files will go to the Recycle Bin.")
         below = [m for m in targets if m.score < 100]
         if below:
             lowest = min(m.score for m in below)
-            lines.append(f"W tym z podobieństwem poniżej 100%: {len(below)} (najniższe: {lowest:.0f}%).")
-        lines.append("Puste foldery po usuniętych plikach też zostaną usunięte.")
+            lines.append(f"Of these, with similarity below 100%: {len(below)} (lowest: {lowest:.0f}%).")
+        lines.append("Folders left empty after deletion will also be deleted.")
         if skipped_sources:
-            lines.append(f"Pliki wzorcowe pominę: {skipped_sources}.")
+            lines.append(f"Reference files will be skipped: {skipped_sources}.")
         if not permanent:
             no_bin = [m for m in targets if not finder.drive_has_recycle_bin(m.path)]
             if no_bin:
-                lines.append(f"UWAGA: {len(no_bin)} plików leży na dysku bez Kosza i zostanie usuniętych trwale.")
-        question = "Usunąć wszystkie pozostałe trafienia?\n\n" + "\n".join(lines)
-        if not messagebox.askyesno("Usuń wszystkie", question, icon="warning", default="no"):
+                lines.append(f"WARNING: {len(no_bin)} files are on a drive without a Recycle Bin and will be deleted permanently.")
+        question = "Delete all remaining matches?\n\n" + "\n".join(lines)
+        if not messagebox.askyesno("Delete all", question, icon="warning", default="no"):
             return
 
         self._set_review_enabled(False)
         done = folders = errors = 0
         for number, match in enumerate(targets, 1):
-            self.status.set(f"Usuwam {number} z {len(targets)}…")
+            self.status.set(f"Deleting {number} of {len(targets)}…")
             self.root.update_idletasks()
             try:
                 result = finder.delete_match(match.path, self.active_root, permanent=permanent)
             except OSError as exc:
                 errors += 1
-                self.last_error = f"Nie udało się usunąć {match.path.name}: {exc}"
+                self.last_error = f"Could not delete {match.path.name}: {exc}"
                 continue
             done += 1
             folders += len(result.removed_folders)
         self.deleted += done
-        summary = f"Usunięto plików: {done}"
+        summary = f"Files deleted: {done}"
         if folders:
-            summary += f" (+ {folders} pustych folderów)"
+            summary += f" (+ {folders} empty folders)"
         if errors:
-            summary += f". Błędy: {errors} (ostatni: {self.last_error})"
+            summary += f". Errors: {errors} (last: {self.last_error})"
         if skipped_sources:
-            summary += f". Pominięto plików wzorcowych: {skipped_sources}"
+            summary += f". Reference files skipped: {skipped_sources}"
         self.matches = []
         self._clear_review()
         self.status.set(summary + ".")
@@ -584,14 +584,14 @@ class App:
         self._show_current()
 
     def finish(self) -> None:
-        summary = f"Koniec. Usunięto plików: {self.deleted}."
+        summary = f"Done. Files deleted: {self.deleted}."
         if self.last_error:
-            summary += f"  Ostatni błąd: {self.last_error}"
+            summary += f"  Last error: {self.last_error}"
         self.status.set(summary)
         self.matches = []
         self._clear_review()
 
-    # ---------- ustawienia i zamykanie ----------
+    # ---------- settings and closing ----------
     def _save_settings(self) -> None:
         settings_store.save({
             "theme": self.theme,
