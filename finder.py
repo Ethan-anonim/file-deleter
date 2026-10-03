@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import send2trash
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -107,3 +108,59 @@ def find_matches(sources: Iterable[SourceFile], root: str | Path,
             matches.append(Match(path, best[0], best[1], _key(path) in source_keys))
     matches.sort(key=lambda m: (-m.score, str(m.path).casefold()))
     return matches
+
+
+def _inside(child: str | Path, root: str | Path) -> bool:
+    c, r = _key(child), _key(root)
+    if c == r:
+        return False
+    try:
+        return os.path.commonpath([c, r]) == r
+    except ValueError:
+        return False
+
+
+def folders_emptied_by(path: str | Path, root: str | Path) -> list[Path]:
+    emptied: list[Path] = []
+    gone = Path(path)
+    current = gone.parent
+    while _inside(current, root):
+        remaining = [c for c in current.iterdir() if _key(c) != _key(gone)]
+        if remaining:
+            break
+        emptied.append(current)
+        gone = current
+        current = current.parent
+    return emptied
+
+
+@dataclass(frozen=True)
+class DeleteResult:
+    file: Path
+    removed_folders: list[Path]
+
+
+def _remove(path: Path, permanent: bool, trash) -> None:
+    if permanent:
+        if path.is_dir():
+            os.rmdir(path)
+        else:
+            os.remove(path)
+    else:
+        trash(str(path.resolve()))
+
+
+def delete_match(path: str | Path, root: str | Path, permanent: bool = False,
+                 trash=send2trash.send2trash) -> DeleteResult:
+    path = Path(path)
+    if path.is_dir():
+        raise IsADirectoryError(f"Nie usuwam folderów: {path}")
+    emptied = folders_emptied_by(path, root) if path.exists() else []
+    _remove(path, permanent, trash)
+    removed: list[Path] = []
+    for folder in emptied:
+        if any(folder.iterdir()):
+            break
+        _remove(folder, permanent, trash)
+        removed.append(folder)
+    return DeleteResult(path, removed)

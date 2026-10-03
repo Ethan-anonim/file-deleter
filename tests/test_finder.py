@@ -156,3 +156,114 @@ def test_source_file_inside_search_root_is_flagged(tmp_path):
 def test_empty_sources_returns_empty(tmp_path):
     touch(tmp_path / "root" / "x.jar")
     assert finder.find_matches([], tmp_path / "root") == []
+
+
+import os
+
+
+def test_delete_removes_file_keeps_nonempty_folder(tmp_path):
+    target = touch(tmp_path / "root" / "a" / "x.jar")
+    touch(tmp_path / "root" / "a" / "other.jar")
+    result = finder.delete_match(target, tmp_path / "root", permanent=True)
+    assert not target.exists()
+    assert (tmp_path / "root" / "a" / "other.jar").exists()
+    assert result.removed_folders == []
+
+
+def test_delete_removes_empty_folders_up_to_but_not_including_root(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "b" / "c" / "x.jar")
+    result = finder.delete_match(target, root, permanent=True)
+    assert [p.name for p in result.removed_folders] == ["c", "b", "a"]
+    assert root.exists()
+    assert list(root.iterdir()) == []
+
+
+def test_delete_stops_at_first_nonempty_parent(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "b" / "x.jar")
+    touch(root / "a" / "keep.txt")
+    result = finder.delete_match(target, root, permanent=True)
+    assert [p.name for p in result.removed_folders] == ["b"]
+    assert (root / "a" / "keep.txt").exists()
+
+
+def test_hidden_file_keeps_folder(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    touch(root / "a" / ".hidden")
+    finder.delete_match(target, root, permanent=True)
+    assert (root / "a").exists()
+
+
+def test_sibling_subfolder_keeps_folder(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    (root / "a" / "sub").mkdir()
+    finder.delete_match(target, root, permanent=True)
+    assert (root / "a" / "sub").exists()
+
+
+def test_file_directly_in_root_never_removes_root(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "x.jar")
+    result = finder.delete_match(target, root, permanent=True)
+    assert result.removed_folders == []
+    assert root.exists()
+
+
+def test_folders_emptied_by_previews_without_deleting(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "b" / "x.jar")
+    preview = finder.folders_emptied_by(target, root)
+    assert [p.name for p in preview] == ["b", "a"]
+    assert target.exists()
+
+
+def test_refuses_to_delete_a_directory(tmp_path):
+    root = tmp_path / "root"
+    folder = root / "a"
+    folder.mkdir(parents=True)
+    with pytest.raises(IsADirectoryError):
+        finder.delete_match(folder, root, permanent=True)
+    assert folder.exists()
+
+
+def test_delete_missing_file_raises_oserror(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    with pytest.raises(OSError):
+        finder.delete_match(root / "nope.jar", root, permanent=True)
+
+
+def test_folder_that_gained_a_file_after_preview_is_kept(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    calls = []
+
+    def racing_trash(p):
+        calls.append(p)
+        os.remove(p)
+        touch(root / "a" / "new.txt")
+
+    result = finder.delete_match(target, root, permanent=False, trash=racing_trash)
+    assert (root / "a" / "new.txt").exists()
+    assert result.removed_folders == []
+    assert len(calls) == 1
+
+
+def test_trash_mode_sends_file_and_empty_folders_to_trash(tmp_path):
+    root = tmp_path / "root"
+    target = touch(root / "a" / "x.jar")
+    trashed = []
+
+    def fake_trash(p):
+        trashed.append(Path(p).name)
+        if os.path.isdir(p):
+            os.rmdir(p)
+        else:
+            os.remove(p)
+
+    result = finder.delete_match(target, root, permanent=False, trash=fake_trash)
+    assert trashed == ["x.jar", "a"]
+    assert [p.name for p in result.removed_folders] == ["a"]
