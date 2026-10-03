@@ -6,7 +6,7 @@ import re
 import send2trash
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 _SEPARATORS = re.compile(r"[\s._\-]+")
 
@@ -84,8 +84,15 @@ def _best_source(ext: str, norm_file: str, exact: dict[tuple[str, str], str],
     return (best_score, best_name) if best_name else None
 
 
+class SearchCancelled(Exception):
+    pass
+
+
 def find_matches(sources: Iterable[SourceFile], root: str | Path,
-                 threshold: float = 85.0) -> list[Match]:
+                 threshold: float = 85.0,
+                 on_progress: Callable[[int], None] | None = None,
+                 should_cancel: Callable[[], bool] | None = None,
+                 progress_every: int = 200) -> list[Match]:
     sources = list(sources)
     source_keys = {_key(s.path) for s in sources}
     exact: dict[tuple[str, str], str] = {}
@@ -96,8 +103,16 @@ def find_matches(sources: Iterable[SourceFile], root: str | Path,
     norm_sources = [(ext, n, name) for (ext, n), name in exact.items()]
 
     matches: list[Match] = []
+    scanned = 0
+    reported: int | None = None
     for dirpath, _dirs, files in os.walk(root):
         for filename in files:
+            if should_cancel is not None and should_cancel():
+                raise SearchCancelled()
+            scanned += 1
+            if on_progress is not None and scanned % progress_every == 0:
+                on_progress(scanned)
+                reported = scanned
             ext, norm_file = _split(filename)
             if not norm_file:
                 continue
@@ -106,6 +121,8 @@ def find_matches(sources: Iterable[SourceFile], root: str | Path,
                 continue
             path = Path(dirpath) / filename
             matches.append(Match(path, best[0], best[1], _key(path) in source_keys))
+    if on_progress is not None and reported != scanned:
+        on_progress(scanned)
     matches.sort(key=lambda m: (-m.score, str(m.path).casefold()))
     return matches
 

@@ -329,3 +329,36 @@ def test_drive_has_recycle_bin_by_drive_type(monkeypatch):
 
 def test_unc_path_has_no_recycle_bin():
     assert finder.drive_has_recycle_bin("\\\\server\\share\\mods\\a.jar") is False
+
+
+def test_find_matches_reports_progress(tmp_path):
+    for i in range(7):
+        touch(tmp_path / "root" / f"d{i % 2}" / f"file{i}.jar")
+    seen = []
+    finder.find_matches(sources_of("file1.jar"), tmp_path / "root",
+                        on_progress=seen.append, progress_every=3)
+    assert seen == sorted(seen)
+    assert seen[-1] == 7
+    assert len(seen) >= 3
+
+
+def test_find_matches_progress_called_for_empty_tree(tmp_path):
+    (tmp_path / "root").mkdir()
+    seen = []
+    finder.find_matches(sources_of("a.jar"), tmp_path / "root", on_progress=seen.append)
+    assert seen == [0]
+
+
+def test_find_matches_can_be_cancelled(tmp_path):
+    for i in range(20):
+        touch(tmp_path / "root" / f"f{i}.jar")
+    scanned = []
+
+    def cancel():
+        return len(scanned) >= 5
+
+    with pytest.raises(finder.SearchCancelled):
+        finder.find_matches(sources_of("f1.jar"), tmp_path / "root",
+                            on_progress=scanned.append, progress_every=1,
+                            should_cancel=cancel)
+    assert len(scanned) < 20
